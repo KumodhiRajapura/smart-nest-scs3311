@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Firestore listeners and FCM. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Android 13+ requires this before a notification can be shown at all.
+         FirebaseMessaging.requestPermission() raises the runtime prompt, but
+         without the declaration here the prompt never appears and safety
+         alerts are dropped silently. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="smart_nest_app"
         android:name="${applicationName}"
@@ -25,6 +34,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Channel used for FCM alerts that arrive while the app is not
+             running. Must match the channel created in
+             lib/services/notification_service.dart, or Android silently
+             files them under a default low-importance channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="smart_nest_alerts" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

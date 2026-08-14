@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Backend worker
+node_modules/
+.env
+
+# Firebase service account private keys. These bypass every security rule and
+# grant full admin access to the project -- never commit one.
+serviceAccount.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json

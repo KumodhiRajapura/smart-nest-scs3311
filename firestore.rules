@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Security rules for Smart Nest.
+//
+// Two kinds of caller reach Firestore through these rules: the Flutter app and
+// the web simulator, both signed in anonymously. The Node worker uses the Admin
+// SDK, which bypasses rules entirely -- that asymmetry is the design. Anything
+// only the worker may write is simply denied to everybody here.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Which fields this update is actually touching.
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function validStatus() {
+      return request.resource.data.status in ['ON', 'OFF', 'ERROR', 'DISCONNECTED'];
+    }
+
+    // Floor plans: fully managed from the app.
+    match /floors/{floorId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
+    }
+
+    match /devices/{deviceId} {
+      allow read: if signedIn();
+      allow create, delete: if signedIn();
+
+      // Clients may drive state and edit configuration, but the field list is
+      // closed: an unknown field name is rejected rather than silently stored,
+      // which keeps the three clients honest about the schema.
+      allow update: if signedIn()
+        && validStatus()
+        && changed().hasOnly([
+             'status', 'turnedOnAt', 'statusReason',
+             'channels', 'lastHeartbeat',
+             'updatedBy', 'updatedAt',
+             'name', 'room', 'gridX', 'gridY',
+             'maxOnDurationMinutes', 'streamUrl', 'floorId'
+           ]);
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
+    }
+
+    // Usage history is evidence. The worker writes it through the Admin SDK;
+    // no client can add to it, edit it, or quietly erase a session.
+    match /usage_logs/{logId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Alerts are raised by the worker. A client may only mark one as read.
+    match /alerts/{alertId} {
+      allow read: if signedIn();
+      allow create: if false;
+      allow update: if signedIn() && changed().hasOnly(['read']);
+      allow delete: if signedIn();
+    }
+
+    // Anything not named above is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
