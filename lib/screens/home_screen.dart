@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_nest_app/screens/camera_screen.dart';
+import 'package:smart_nest_app/screens/floor_dashboard_screen.dart';
 import 'package:smart_nest_app/screens/floor_selection_screen.dart';
 import 'package:smart_nest_app/screens/reports_screen.dart';
 import 'package:smart_nest_app/screens/settings_screen.dart';
@@ -189,6 +190,35 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
+              Row(
+                children: [
+                  const Text(
+                    'Devices',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${devices.length} total',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (devices.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Text(
+                    'No devices yet. Run the worker seed to create them.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                )
+              else
+                ...devices.map((device) => _DeviceTile(device: device)),
+              const SizedBox(height: 24),
               const Text(
                 'Quick access',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
@@ -233,6 +263,120 @@ class HomeScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// One row in the home device list.
+///
+/// A gang box gets no master switch: its children are independent, and there is
+/// no single "off" that is honest about three switches. It reads how many are
+/// on and sends you to the detail screen, which is where they are controlled.
+class _DeviceTile extends StatelessWidget {
+  final SmartDevice device;
+
+  const _DeviceTile({required this.device});
+
+  IconData get _icon {
+    switch (device.type) {
+      case DeviceType.outlet:
+        return Icons.power_outlined;
+      case DeviceType.multiSwitch:
+        return Icons.toggle_on_outlined;
+      case DeviceType.scheduledAppliance:
+        return Icons.schedule_rounded;
+      case DeviceType.scheduledLight:
+        return Icons.lightbulb_outline_rounded;
+      case DeviceType.camera:
+        return Icons.videocam_outlined;
+    }
+  }
+
+  Color get _color {
+    switch (device.status) {
+      case DeviceStatus.on:
+        return const Color(0xFF16A34A);
+      case DeviceStatus.error:
+        return const Color(0xFFEF4444);
+      case DeviceStatus.disconnected:
+        return const Color(0xFFF59E0B);
+      case DeviceStatus.off:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  String get _subtitle {
+    if (device.isMultiSwitch) {
+      final on = device.multiSwitchStates.where((s) => s).length;
+      return '${device.type.name} · $on/${device.multiSwitchStates.length} on';
+    }
+    return '${device.type.name} · ${device.status.name}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        elevation: 0,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => DeviceDetailScreen(device: device)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: _color.withAlpha((0.12 * 255).round()),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(_icon, color: _color),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        device.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _subtitle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (device.isMultiSwitch)
+                  Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400)
+                else
+                  Switch(
+                    value: device.isOn,
+                    onChanged: (value) async {
+                      await CloudSyncService()
+                          .updateDeviceState(device.id, isOn: value);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
