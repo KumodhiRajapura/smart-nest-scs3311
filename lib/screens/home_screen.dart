@@ -6,6 +6,7 @@ import 'package:smart_nest_app/screens/reports_screen.dart';
 import 'package:smart_nest_app/screens/settings_screen.dart';
 import 'package:smart_nest_app/services/smart_home_service.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
+import 'package:smart_nest_app/widgets/device_action.dart';
 import 'package:smart_nest_app/widgets/metric_card.dart';
 import 'package:smart_nest_app/models/device_model.dart';
 
@@ -368,10 +369,11 @@ class _DeviceTile extends StatelessWidget {
                 else
                   Switch(
                     value: device.isOn,
-                    onChanged: (value) async {
-                      await CloudSyncService()
-                          .updateDeviceState(device.id, isOn: value);
-                    },
+                    onChanged: (value) => runDeviceAction(
+                      context,
+                      () => CloudSyncService()
+                          .updateDeviceState(device.id, isOn: value),
+                    ),
                   ),
               ],
             ),
