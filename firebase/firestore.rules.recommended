@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow reads for all clients (mobile & simulator rely on live reads)
+    match /{document=**} {
+      allow read: if true;
+    }
+
+    // Devices: clients may update allowed fields but must NOT set backend-only alert fields.
+    match /devices/{deviceId} {
+      function isValidType(t) {
+        return t in ['outlet','multiSwitch','scheduledAppliance','scheduledLight','camera'];
+      }
+      function isValidStatus(s) {
+        return s in ['on','off','error','disconnected'];
+      }
+
+      allow create, update: if request.auth != null
+        // Prevent client writes to alert fields (backend-only)
+        && !(request.resource.data.keys().hasAny(['lastAlert','lastAlertAt']))
+        // Validate enum fields if present
+        && ( !('type' in request.resource.data) || isValidType(request.resource.data.type) )
+        && ( !('status' in request.resource.data) || isValidStatus(request.resource.data.status) )
+        // Require lastUpdated when provided to be a timestamp (clients normally use serverTimestamp)
+        && ( !('lastUpdated' in request.resource.data) || request.resource.data.lastUpdated is timestamp );
+
+      // Deletion only allowed by backend-admins
+      allow delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Alerts: backend-only creation (Admin SDK or clients with admin claim)
+    match /alerts/{alertId} {
+      allow create: if request.auth != null && request.auth.token.admin == true;
+      allow update, delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // usageLogs: backend-only
+    match /usage_logs/{logId} {
+      allow create: if request.auth != null && request.auth.token.admin == true;
+      allow update, delete: if false;
+    }
+
+    // Floors & Rooms: reading allowed; writing restricted to admins
+    match /floors/{floorId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Default deny for writes to other paths
+    match /{path=**} {
+      allow write: if false;
+    }
+  }
+}

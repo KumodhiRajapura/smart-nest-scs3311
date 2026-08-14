@@ -1,0 +1,1 @@
+Add mock camera images here. You can use placeholder images (e.g., https://placehold.co/400x300) or copy small demo images into this folder. The simulator will reference cameraImageUrls stored in device documents; put sample URLs or host images and paste URLs in device docs.
