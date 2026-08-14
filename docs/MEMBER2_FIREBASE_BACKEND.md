@@ -382,72 +382,22 @@ Run against project `smart-nest-scs3311` on 2026-08-14.
 Tests 5, 7, 9 and 13 are the ones worth demonstrating — they are where the
 design decisions actually show.
 
-Rows 1–3 were confirmed with the app and the simulator open side by side. For
-row 3 the write came from a third process that was neither client, so what the
-screens showed can only have come back from the database. Independently, an
-external write reached an `onSnapshot` listener in **416 ms** — the listener
-cannot tell which client caused the change, which is why one measurement
-underwrites all three directions.
+Rows 4–11 and 14 were driven from a script against the live project, so those
+writes went through the Admin SDK and do not exercise `firestore.rules`. Rows
+1–3 and 12 were done by hand through the app and the simulator, which do.
 
-**Row 13 has not been run.** It is the one outstanding check. To do it, with the
-worker, the simulator and the app all up:
+**Row 13 is outstanding.** To run it: in the app's Chrome tab press `F12`, then
+`Ctrl+Shift+P` → **Go offline** (that tab only, so the simulator stays
+connected). Toggle a device — the switch moves at once and the simulator shows
+nothing. Then `Ctrl+Shift+P` → **Go online**; the simulator catches up. Chrome is
+fine for this: the optimistic write and the replay come from the SDK's in-memory
+queue, not from `persistenceEnabled`.
 
-1. In the app's Chrome tab: `F12`, then `Ctrl+Shift+P` → **Go offline**. That
-   takes only this tab off the network, so the simulator stays connected.
-2. Toggle a device in the app. The switch moves immediately — the local cache
-   fires the snapshot before any server sees it.
-3. Look at the simulator: nothing has changed. That is the part worth watching,
-   because it shows the write is genuinely queued rather than merely slow.
-4. Back in the app tab: `Ctrl+Shift+P` → **Go online**. The simulator catches up
-   within about a second.
-
-Running the app in Chrome rather than on a handset does not weaken steps 1–4:
-the optimistic write and the replay come from the SDK's in-memory queue, not
-from `persistenceEnabled`. What that flag buys on web is an IndexedDB cache that
-survives a reload — so the one variant that would behave differently in Chrome
-is reloading the page while still offline, which this row does not do.
-
-Row 12 found two bugs, both fixed. The refusal in `toggleDevice` worked, but no
-screen caught the `AppException`, so the write was rejected and the user saw
-nothing at all — the switch sprang back on its own and a refused toggle looked
-identical to a dropped one. `runDeviceAction` in `lib/widgets/device_action.dart`
-now surfaces it. Separately, the simulator was heartbeating every device it
-listed, including ones it had just declared unreachable; with
-`HEARTBEAT_TIMEOUT_SECONDS` set, the watchdog would read that beat as a recovery
-and walk the device back to `off` within one check interval, so it could never
-be held in `disconnected` long enough to test this row at all.
-
-**Evidence for the timing rows**, from one iron session with a 2-minute budget:
-
-```
-17:33:48  turnedOnAt (server timestamp), deadline 17:35:48
-17:34:41  worker restarted -> "safety: Clothes Iron armed, 67s remaining"   #9
-17:35:48  SAFETY CUTOFF: Clothes Iron after 2 min                           #6
-17:35:48  usage: Clothes Iron -> auto_off_safety after 120s                 #14
-```
-
-The worker was down for ~50 s in the middle and the cutoff still landed on the
-original deadline to the second: 67 s is the remainder, not a fresh budget. For
-#7, pressing ON on a device already ON left `turnedOnAt` at
-`17:28:57.895Z` unchanged — the guard skipped the write rather than granting a
-new 2 minutes.
-
-**Evidence for the schedule rows**, from a temporary 00:04–00:22 window on the
-porch light:
-
-```
-00:04     window opens -> status=on, statusReason=schedule, updatedBy=backend_worker   #10
-00:04:20  switched off by hand, mid-window
-00:04:40  off   00:05:01  off   00:05:24  off   00:05:44  off   00:06:04  off          #11
-```
-
-Five scheduler ticks inside an open window left the override alone. A
-level-triggered scheduler would have undone it on the first one, twenty seconds
-in.
-
-Writes in that run went through the Admin SDK, so it exercises the sync and
-safety mechanism but **not** `firestore.rules`. Rule coverage is row 12 and the
-simulator's anonymous session, both of which go through a real client.
+Row 12 turned up two bugs, both fixed. The app refused the toggle correctly but
+said nothing, because no screen caught the `AppException` —
+`lib/widgets/device_action.dart` now surfaces it. And the simulator was
+heartbeating devices it had just declared unreachable, which would let the
+watchdog recover them straight back out of `disconnected`.
 
 ### Unit tests
 
