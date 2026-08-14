@@ -375,7 +375,7 @@ Run against project `smart-nest-scs3311` on 2026-08-14.
 | 9 | Kill and restart the worker mid-session | Countdown resumes with the correct remainder | ✓ |
 | 10 | Reach a schedule `scheduleStartTime` | Device switches on, `statusReason: schedule` | ✓ |
 | 11 | Override a scheduled light by hand | Stays overridden until the next boundary | ✓ |
-| 12 | Simulate Disconnect | Phone refuses to toggle that device | |
+| 12 | Simulate Disconnect | Phone refuses to toggle that device | ✓ |
 | 13 | Airplane mode, toggle, reconnect | Write replays; both clients converge | |
 | 14 | Any on→off cycle | Exactly one `usage_logs` row, correct duration | ✓ |
 
@@ -389,8 +389,18 @@ external write reached an `onSnapshot` listener in **416 ms** — the listener
 cannot tell which client caused the change, which is why one measurement
 underwrites all three directions.
 
-Rows 12 and 13 are the remaining manual pass; both need a person driving the
-simulator and the browser's network state.
+Row 13 is the remaining manual pass; it needs a person changing the browser's
+network state.
+
+Row 12 found two bugs, both fixed. The refusal in `toggleDevice` worked, but no
+screen caught the `AppException`, so the write was rejected and the user saw
+nothing at all — the switch sprang back on its own and a refused toggle looked
+identical to a dropped one. `runDeviceAction` in `lib/widgets/device_action.dart`
+now surfaces it. Separately, the simulator was heartbeating every device it
+listed, including ones it had just declared unreachable; with
+`HEARTBEAT_TIMEOUT_SECONDS` set, the watchdog would read that beat as a recovery
+and walk the device back to `off` within one check interval, so it could never
+be held in `disconnected` long enough to test this row at all.
 
 **Evidence for the timing rows**, from one iron session with a 2-minute budget:
 
