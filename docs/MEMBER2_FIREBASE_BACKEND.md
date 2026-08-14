@@ -364,17 +364,17 @@ Run against project `smart-nest-scs3311` on 2026-08-14.
 
 | # | Action | Expected | ✓ |
 |---|---|---|---|
-| 1 | Toggle on phone | Simulator updates < 1 s, no refresh | ~ |
-| 2 | Toggle in simulator | Phone updates < 1 s, no refresh | ~ |
-| 3 | Edit `status` by hand in the Firestore console | Both update | ~ |
+| 1 | Toggle on phone | Simulator updates < 1 s, no refresh | ✓ |
+| 2 | Toggle in simulator | Phone updates < 1 s, no refresh | ✓ |
+| 3 | Edit `status` by hand in the Firestore console | Both update | ✓ |
 | 4 | Flip one child switch of a gang box | Only that switch moves; unit shows `on` | ✓ |
 | 5 | Flip two children from two clients at once | Both changes survive (transaction) | ✓ |
 | 6 | Iron ON, wait past the budget | Worker writes `off`, alert appears, push arrives | ✓ |
 | 7 | Iron ON while already ON | Clock does **not** restart; cutoff still fires on time | ✓ |
 | 8 | Iron OFF then straight back ON | New full budget; old timer stands down | ✓ |
 | 9 | Kill and restart the worker mid-session | Countdown resumes with the correct remainder | ✓ |
-| 10 | Reach a schedule `scheduleStartTime` | Device switches on, `statusReason: schedule` | ~ |
-| 11 | Override a scheduled light by hand | Stays overridden until the next boundary | |
+| 10 | Reach a schedule `scheduleStartTime` | Device switches on, `statusReason: schedule` | ✓ |
+| 11 | Override a scheduled light by hand | Stays overridden until the next boundary | ✓ |
 | 12 | Simulate Disconnect | Phone refuses to toggle that device | |
 | 13 | Airplane mode, toggle, reconnect | Write replays; both clients converge | |
 | 14 | Any on→off cycle | Exactly one `usage_logs` row, correct duration | ✓ |
@@ -382,13 +382,15 @@ Run against project `smart-nest-scs3311` on 2026-08-14.
 Tests 5, 7, 9 and 13 are the ones worth demonstrating — they are where the
 design decisions actually show.
 
-**What `~` means.** The write path and the push were verified, the two screens
-side by side were not. An external write reached an `onSnapshot` listener in
-**416 ms**, which is the whole of what rows 1–3 test — the listener cannot tell
-which client caused the change, so one measurement covers all three directions.
-Row 10 saw the closing edge of a window (`schedule: Porch Light -> OFF`) but not
-an opening one. Rows 11–13 need a person at both clients and are the remaining
-manual pass.
+Rows 1–3 were confirmed with the app and the simulator open side by side. For
+row 3 the write came from a third process that was neither client, so what the
+screens showed can only have come back from the database. Independently, an
+external write reached an `onSnapshot` listener in **416 ms** — the listener
+cannot tell which client caused the change, which is why one measurement
+underwrites all three directions.
+
+Rows 12 and 13 are the remaining manual pass; both need a person driving the
+simulator and the browser's network state.
 
 **Evidence for the timing rows**, from one iron session with a 2-minute budget:
 
@@ -404,6 +406,19 @@ original deadline to the second: 67 s is the remainder, not a fresh budget. For
 #7, pressing ON on a device already ON left `turnedOnAt` at
 `17:28:57.895Z` unchanged — the guard skipped the write rather than granting a
 new 2 minutes.
+
+**Evidence for the schedule rows**, from a temporary 00:04–00:22 window on the
+porch light:
+
+```
+00:04     window opens -> status=on, statusReason=schedule, updatedBy=backend_worker   #10
+00:04:20  switched off by hand, mid-window
+00:04:40  off   00:05:01  off   00:05:24  off   00:05:44  off   00:06:04  off          #11
+```
+
+Five scheduler ticks inside an open window left the override alone. A
+level-triggered scheduler would have undone it on the first one, twenty seconds
+in.
 
 Writes in that run went through the Admin SDK, so it exercises the sync and
 safety mechanism but **not** `firestore.rules`. Rule coverage is row 12 and the
