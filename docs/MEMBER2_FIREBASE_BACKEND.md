@@ -71,7 +71,9 @@ security rules, so it can write fields no client is permitted to write.
 ### 3.1 Firebase project
 
 1. [console.firebase.google.com](https://console.firebase.google.com) → **Add
-   project** → `smart-nest-app` (the id already in `.firebaserc`).
+   project**. Console appends a suffix when the name is taken, so the id you get
+   is the one that matters — ours is `smart-nest-scs3311`. Put it in
+   `.firebaserc`; every command below takes it.
 2. **Firestore Database** → *Create* → test mode → region `asia-south1`.
 3. **Authentication** → enable **Email/Password**, **Google**, *and*
    **Anonymous**.
@@ -84,7 +86,7 @@ simulator** signs in that way, and the rules reject unauthenticated reads.
 
 ```bash
 dart pub global activate flutterfire_cli
-flutterfire configure --project=smart-nest-app     # android + web
+flutterfire configure --project=smart-nest-scs3311  # android + web
 flutter pub add firebase_messaging flutter_local_notifications
 flutter pub get
 ```
@@ -358,25 +360,54 @@ that look like a code bug.
 
 ## 12. Integration and sync testing
 
+Run against project `smart-nest-scs3311` on 2026-08-14.
+
 | # | Action | Expected | ✓ |
 |---|---|---|---|
-| 1 | Toggle on phone | Simulator updates < 1 s, no refresh | |
-| 2 | Toggle in simulator | Phone updates < 1 s, no refresh | |
-| 3 | Edit `status` by hand in the Firestore console | Both update | |
-| 4 | Flip one child switch of a gang box | Only that switch moves; unit shows `on` | |
-| 5 | Flip two children from two clients at once | Both changes survive (transaction) | |
-| 6 | Iron ON, wait past the budget | Worker writes `off`, alert appears, push arrives | |
-| 7 | Iron ON while already ON | Clock does **not** restart; cutoff still fires on time | |
-| 8 | Iron OFF then straight back ON | New full budget; old timer stands down | |
-| 9 | Kill and restart the worker mid-session | Countdown resumes with the correct remainder | |
-| 10 | Reach a schedule `scheduleStartTime` | Device switches on, `statusReason: schedule` | |
+| 1 | Toggle on phone | Simulator updates < 1 s, no refresh | ~ |
+| 2 | Toggle in simulator | Phone updates < 1 s, no refresh | ~ |
+| 3 | Edit `status` by hand in the Firestore console | Both update | ~ |
+| 4 | Flip one child switch of a gang box | Only that switch moves; unit shows `on` | ✓ |
+| 5 | Flip two children from two clients at once | Both changes survive (transaction) | ✓ |
+| 6 | Iron ON, wait past the budget | Worker writes `off`, alert appears, push arrives | ✓ |
+| 7 | Iron ON while already ON | Clock does **not** restart; cutoff still fires on time | ✓ |
+| 8 | Iron OFF then straight back ON | New full budget; old timer stands down | ✓ |
+| 9 | Kill and restart the worker mid-session | Countdown resumes with the correct remainder | ✓ |
+| 10 | Reach a schedule `scheduleStartTime` | Device switches on, `statusReason: schedule` | ~ |
 | 11 | Override a scheduled light by hand | Stays overridden until the next boundary | |
 | 12 | Simulate Disconnect | Phone refuses to toggle that device | |
 | 13 | Airplane mode, toggle, reconnect | Write replays; both clients converge | |
-| 14 | Any on→off cycle | Exactly one `usage_logs` row, correct duration | |
+| 14 | Any on→off cycle | Exactly one `usage_logs` row, correct duration | ✓ |
 
 Tests 5, 7, 9 and 13 are the ones worth demonstrating — they are where the
 design decisions actually show.
+
+**What `~` means.** The write path and the push were verified, the two screens
+side by side were not. An external write reached an `onSnapshot` listener in
+**416 ms**, which is the whole of what rows 1–3 test — the listener cannot tell
+which client caused the change, so one measurement covers all three directions.
+Row 10 saw the closing edge of a window (`schedule: Porch Light -> OFF`) but not
+an opening one. Rows 11–13 need a person at both clients and are the remaining
+manual pass.
+
+**Evidence for the timing rows**, from one iron session with a 2-minute budget:
+
+```
+17:33:48  turnedOnAt (server timestamp), deadline 17:35:48
+17:34:41  worker restarted -> "safety: Clothes Iron armed, 67s remaining"   #9
+17:35:48  SAFETY CUTOFF: Clothes Iron after 2 min                           #6
+17:35:48  usage: Clothes Iron -> auto_off_safety after 120s                 #14
+```
+
+The worker was down for ~50 s in the middle and the cutoff still landed on the
+original deadline to the second: 67 s is the remainder, not a fresh budget. For
+#7, pressing ON on a device already ON left `turnedOnAt` at
+`17:28:57.895Z` unchanged — the guard skipped the write rather than granting a
+new 2 minutes.
+
+Writes in that run went through the Admin SDK, so it exercises the sync and
+safety mechanism but **not** `firestore.rules`. Rule coverage is row 12 and the
+simulator's anonymous session, both of which go through a real client.
 
 ### Unit tests
 
