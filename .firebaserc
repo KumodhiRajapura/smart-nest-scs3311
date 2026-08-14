@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "smart-nest-app"
-  }
+    "default": "smart-nest-scs3311"
+  },
+  "targets": {},
+  "etags": {}
 }

@@ -44,13 +44,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: _placeholder,
-    appId: _placeholder,
-    messagingSenderId: _placeholder,
-    projectId: _placeholder,
-    storageBucket: _placeholder,
+    apiKey: 'AIzaSyBBEjcvEH8N5YUOyBl6w4DRNDyJfEsiI-A',
+    appId: '1:362954050184:android:f07df5521ed49085ceed3d',
+    messagingSenderId: '362954050184',
+    projectId: 'smart-nest-scs3311',
+    storageBucket: 'smart-nest-scs3311.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: _placeholder,
     appId: _placeholder,
@@ -61,11 +60,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: _placeholder,
-    appId: _placeholder,
-    messagingSenderId: _placeholder,
-    projectId: _placeholder,
-    authDomain: _placeholder,
-    storageBucket: _placeholder,
+    apiKey: 'AIzaSyBKFJqZNQBV77ivx4ypGwcVJ-rnwCRg-AA',
+    appId: '1:362954050184:web:a85ef90fb9039a02ceed3d',
+    messagingSenderId: '362954050184',
+    projectId: 'smart-nest-scs3311',
+    authDomain: 'smart-nest-scs3311.firebaseapp.com',
+    storageBucket: 'smart-nest-scs3311.firebasestorage.app',
   );
 }
