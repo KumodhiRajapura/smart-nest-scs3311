@@ -5,26 +5,28 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:smart_nest_app/main.dart';
+import 'package:smart_nest_app/services/auth_service.dart';
+import 'package:smart_nest_app/services/firestore_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('Smart Nest app loads', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      ServicesProvider(
+        authService: AuthService(),
+        firestoreService: FirestoreService(),
+        child: const SmartNestApp(),
+      ),
+    );
+    expect(find.text('Smart Nest'), findsWidgets);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pumpAndSettle();
+    // App may show the home screen or the sign-in screen depending on Firebase
+    // configuration in the test environment. Accept either.
+    final foundWelcome = find.text('Welcome home').evaluate().isNotEmpty;
+    final foundSignIn = find.text('Sign in').evaluate().isNotEmpty;
+    expect(foundWelcome || foundSignIn, isTrue);
   });
 }
