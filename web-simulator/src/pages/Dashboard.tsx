@@ -39,7 +39,15 @@ export default function Dashboard() {
             // house falling offline. Restarted only when the set of devices
             // actually changes, not on every snapshot -- otherwise the interval
             // is reset before it ever fires.
-            const ids = list.map((d) => d.id)
+            //
+            // Devices we have declared unreachable are left out: a beat from an
+            // appliance that is supposed to be offline tells the watchdog it is
+            // back, and it recovers the device within one check interval. You
+            // could never hold one in DISCONNECTED long enough to see the app
+            // refuse to switch it.
+            const ids = list
+              .filter((d) => d.status !== 'disconnected' && d.status !== 'error')
+              .map((d) => d.id)
             stopBeats?.()
             stopBeats = startHeartbeats(ids, 10000)
           },
