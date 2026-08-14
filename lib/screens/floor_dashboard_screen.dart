@@ -3,6 +3,7 @@ import 'package:smart_nest_app/models/device_model.dart';
 import 'package:smart_nest_app/models/room_model.dart';
 import 'package:smart_nest_app/services/smart_home_service.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
+import 'package:smart_nest_app/widgets/device_action.dart';
 
 class FloorDashboardScreen extends StatefulWidget {
   final Room room;
@@ -140,10 +141,12 @@ class _FloorDashboardScreenState extends State<FloorDashboardScreen> {
                                     backgroundColor: state ? Colors.green : Colors.grey.shade200,
                                     foregroundColor: state ? Colors.white : Colors.black87,
                                   ),
-                                  onPressed: () async {
+                                  onPressed: () => runDeviceAction(
+                                    context,
                                     // update cloud-backed state (handles persistence and streams)
-                                    await CloudSyncService().updateMultiSwitchState(device.id, i, !state);
-                                  },
+                                    () => CloudSyncService()
+                                        .updateMultiSwitchState(device.id, i, !state),
+                                  ),
                                   child: Text(state ? 'On' : 'Off'),
                                 );
                               }),
@@ -173,9 +176,10 @@ class _FloorDashboardScreenState extends State<FloorDashboardScreen> {
                   subtitle: Text('${device.type.name} · ${device.status.name}'),
                   trailing: Switch(
                   value: device.isOn,
-                  onChanged: (value) async {
-                    await CloudSyncService().updateDeviceState(device.id, isOn: value);
-                  },
+                  onChanged: (value) => runDeviceAction(
+                    context,
+                    () => CloudSyncService().updateDeviceState(device.id, isOn: value),
+                  ),
                   ),
                   onTap: () {
                     Navigator.of(context).push(

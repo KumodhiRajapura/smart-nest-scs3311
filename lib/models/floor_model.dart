@@ -21,7 +21,11 @@ class FloorModel {
       id: map['id'] ?? doc.id,
       name: map['name'] ?? '',
       order: map['order'] is int ? map['order'] as int : 0,
-      floorPlanImageAsset: map['floorPlanImageAsset'] as String?,
+      // `floorPlanImageUrl` is the canonical name in firebase/SCHEMA.md and is
+      // what the seed script and the simulator write. The older
+      // `floorPlanImageAsset` key is still read so documents created before the
+      // rename keep rendering.
+      floorPlanImageAsset: (map['floorPlanImageUrl'] ?? map['floorPlanImageAsset']) as String?,
     );
   }
 }

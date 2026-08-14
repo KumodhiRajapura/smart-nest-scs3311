@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "362954050184",
+    "project_id": "smart-nest-scs3311",
+    "storage_bucket": "smart-nest-scs3311.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:362954050184:android:f07df5521ed49085ceed3d",
+        "android_client_info": {
+          "package_name": "com.example.smart_nest_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "362954050184-fjfoqmvstqf64hppa8pp52br2sbsv4nb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBEjcvEH8N5YUOyBl6w4DRNDyJfEsiI-A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "362954050184-fjfoqmvstqf64hppa8pp52br2sbsv4nb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "smart-nest-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend worker for Smart Nest: safety cutoffs, schedules, usage tracking and push alerts.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "seed": "node seed.js",
+    "seed:wipe": "node seed.js --wipe"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.7.0"
+  }
+}
