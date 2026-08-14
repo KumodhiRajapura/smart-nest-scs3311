@@ -1,33 +1,41 @@
 'use strict';
 
-const { db, FieldValue, log } = require('./firebase');
-const { COLLECTIONS, REASON, SOURCE } = require('./constants');
+const { log } = require('./firebase');
+const { STATUS, REASON, SOURCE } = require('./constants');
 const { setPower } = require('./deviceControl');
 
 /**
  * Time-of-day automation for lights and anything else with a preset window.
  *
- * Edge-triggered, not level-triggered: the worker acts on the minute a window
- * opens and the minute it closes, and does nothing in between. That is what
- * makes a manual override work -- switch the porch light off at 20:00 and it
- * stays off, instead of being switched back on four seconds later by a worker
- * insisting the window is still open. The next boundary takes over again.
+ * Schedules live on the device document itself (`scheduleStartTime`,
+ * `scheduleEndTime`, `scheduleDays`, `scheduleEnabled`) as defined in
+ * firebase/SCHEMA.md, so this reads from the device cache the main listener
+ * already maintains -- no extra query every tick, and no read cost for sitting
+ * still.
  *
- * Times are wall-clock strings, so this process must run in the same timezone
- * the schedules were written in. Set TZ=Asia/Colombo before starting it.
+ * **Edge-triggered, not level-triggered.** The worker acts on the minute a
+ * window opens and the minute it closes, and ignores the time in between. That
+ * is what lets a manual override stand: switch the porch light off at 20:00 and
+ * it stays off, instead of being switched back on twenty seconds later by a
+ * worker insisting the window is still open. The next boundary takes over
+ * again.
+ *
+ * Times are wall-clock strings, so this process must run in the timezone the
+ * schedules were written in. Set TZ=Asia/Colombo before starting it.
  */
 
 const TICK_SECONDS = Number(process.env.SCHEDULE_TICK_SECONDS || 20);
 
-/** Windows already open when the worker starts are applied once, if enabled. */
+/** Apply windows that are already open when the worker starts. */
 const CATCH_UP = String(process.env.SCHEDULE_CATCHUP || 'false') === 'true';
 
-// `${scheduleId}:${hh:mm}` for boundaries already handled, so a 20-second tick
+// `${deviceId}:${hh:mm}` for boundaries already handled, so a 20-second tick
 // does not fire the same boundary three times inside its minute.
 let firedThisMinute = new Set();
 let currentMinute = '';
 
 let interval = null;
+let getDevices = () => [];
 
 function hhmm(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -39,71 +47,66 @@ function isoWeekday(date) {
   return date.getDay() === 0 ? 7 : date.getDay();
 }
 
-function isInWindow(schedule, now) {
-  const toMinutes = (s) => {
-    const [h, m] = String(s).split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-  const start = toMinutes(schedule.startTime);
-  const end = toMinutes(schedule.endTime);
+function toMinutes(value) {
+  const [h, m] = String(value).split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** A device takes part in scheduling only if it has both ends of a window. */
+function hasSchedule(device) {
+  if (!device.scheduleStartTime || !device.scheduleEndTime) return false;
+  // Absent means enabled: documents written before the flag existed should
+  // still run rather than silently going dark.
+  return device.scheduleEnabled !== false;
+}
+
+function runsToday(device, now) {
+  const days = Array.isArray(device.scheduleDays) ? device.scheduleDays : null;
+  if (!days || days.length === 0) return true;
+  return days.includes(isoWeekday(now));
+}
+
+function isInWindow(device, now) {
+  const start = toMinutes(device.scheduleStartTime);
+  const end = toMinutes(device.scheduleEndTime);
   const at = now.getHours() * 60 + now.getMinutes();
 
   // 22:00 -> 06:00 wraps past midnight.
   return end <= start ? at >= start || at < end : at >= start && at < end;
 }
 
-async function applySchedule(doc, on) {
-  const schedule = doc.data();
-
+async function apply(device, on) {
   await setPower({
-    deviceId: schedule.deviceId,
+    deviceId: device.id,
     on,
-    channelIndex:
-      schedule.channelIndex === undefined ? null : schedule.channelIndex,
     reason: REASON.schedule,
     source: SOURCE.worker,
   });
-
-  await doc.ref.update({ lastRunAt: FieldValue.serverTimestamp() });
-
-  log(
-    `schedule: ${schedule.label || doc.id} -> ${on ? 'ON' : 'OFF'} ` +
-      `(device ${schedule.deviceId})`
-  );
+  log(`schedule: ${device.name} -> ${on ? 'ON' : 'OFF'}`);
 }
 
 async function tick() {
   const now = new Date();
   const minute = hhmm(now);
-  const weekday = isoWeekday(now);
 
   if (minute !== currentMinute) {
     currentMinute = minute;
     firedThisMinute = new Set();
   }
 
-  const snap = await db()
-    .collection(COLLECTIONS.schedules)
-    .where('enabled', '==', true)
-    .get();
+  for (const device of getDevices()) {
+    if (!hasSchedule(device)) continue;
+    if (!runsToday(device, now)) continue;
 
-  for (const doc of snap.docs) {
-    const schedule = doc.data();
-    const days = Array.isArray(schedule.daysOfWeek)
-      ? schedule.daysOfWeek
-      : [1, 2, 3, 4, 5, 6, 7];
-
-    if (!days.includes(weekday)) continue;
-
-    const key = `${doc.id}:${minute}`;
+    const key = `${device.id}:${minute}`;
     if (firedThisMinute.has(key)) continue;
 
-    if (schedule.startTime === minute) {
+    if (device.scheduleStartTime === minute) {
       firedThisMinute.add(key);
-      await applySchedule(doc, true);
-    } else if (schedule.endTime === minute) {
+      await apply(device, true);
+    } else if (device.scheduleEndTime === minute) {
       firedThisMinute.add(key);
-      await applySchedule(doc, false);
+      await apply(device, false);
     }
   }
 }
@@ -111,28 +114,24 @@ async function tick() {
 /** Apply the state implied by any window that is already open. */
 async function catchUp() {
   const now = new Date();
-  const weekday = isoWeekday(now);
 
-  const snap = await db()
-    .collection(COLLECTIONS.schedules)
-    .where('enabled', '==', true)
-    .get();
+  for (const device of getDevices()) {
+    if (!hasSchedule(device)) continue;
+    if (!runsToday(device, now)) continue;
+    if (!isInWindow(device, now)) continue;
+    if (device.status === STATUS.on) continue;
 
-  for (const doc of snap.docs) {
-    const schedule = doc.data();
-    const days = Array.isArray(schedule.daysOfWeek)
-      ? schedule.daysOfWeek
-      : [1, 2, 3, 4, 5, 6, 7];
-
-    if (!days.includes(weekday)) continue;
-    if (!isInWindow(schedule, now)) continue;
-
-    log(`schedule: catching up ${schedule.label || doc.id}`);
-    await applySchedule(doc, true);
+    log(`schedule: catching up ${device.name}`);
+    await apply(device, true);
   }
 }
 
-async function start() {
+/**
+ * @param {() => Array} deviceSource live device list, supplied by index.js
+ */
+async function start(deviceSource) {
+  getDevices = deviceSource;
+
   if (CATCH_UP) {
     await catchUp().catch((err) => log(`catch-up failed: ${err.message}`));
   }
@@ -145,7 +144,8 @@ async function start() {
 
   log(
     `scheduler running every ${TICK_SECONDS}s ` +
-      `(TZ=${process.env.TZ || 'system default'}, catch-up ${CATCH_UP ? 'on' : 'off'})`
+      `(TZ=${process.env.TZ || 'system default'}, ` +
+      `catch-up ${CATCH_UP ? 'on' : 'off'})`
   );
 }
 
@@ -154,4 +154,4 @@ function stop() {
   interval = null;
 }
 
-module.exports = { start, stop, tick, isInWindow };
+module.exports = { start, stop, tick, isInWindow, hasSchedule };

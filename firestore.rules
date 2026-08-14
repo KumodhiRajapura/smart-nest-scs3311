@@ -2,12 +2,22 @@ rules_version = '2';
 
 // Security rules for Smart Nest.
 //
-// Two kinds of caller reach Firestore through these rules: the Flutter app and
-// the web simulator, both signed in anonymously. The Node worker uses the Admin
-// SDK, which bypasses rules entirely -- that asymmetry is the design. Anything
-// only the worker may write is simply denied to everybody here.
+// Canonical schema: firebase/SCHEMA.md
 //
-// Deploy with:  firebase deploy --only firestore:rules
+// Two kinds of caller reach Firestore through these rules:
+//
+//   * the Flutter app     -- signed in with email/password or Google
+//   * the web simulator   -- signed in anonymously
+//
+// The backend worker uses the Admin SDK, which bypasses rules entirely. That
+// asymmetry is the design: anything only the worker may write is simply denied
+// to everybody here, and the worker still writes it.
+//
+// There is no `ownerId` scoping. This is one shared house -- the app, the
+// simulator and the worker all look at the same devices. Per-user devices would
+// make the simulator unable to mirror the app at all.
+//
+// Deploy:  firebase deploy --only firestore:rules
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -16,17 +26,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Which fields this update is actually touching.
+    // Which fields this update actually touches.
     function changed() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
     function validStatus() {
-      return request.resource.data.status in ['ON', 'OFF', 'ERROR', 'DISCONNECTED'];
+      return request.resource.data.status in ['on', 'off', 'error', 'disconnected'];
     }
 
-    // Floor plans: fully managed from the app.
+    // lastAlert / lastAlertAt are written by the worker only. A client that
+    // could set them could fake a safety alert on any device.
+    function noBackendOnlyFields() {
+      return !changed().hasAny(['lastAlert', 'lastAlertAt']);
+    }
+
     match /floors/{floorId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
+    }
+
+    match /rooms/{roomId} {
       allow read: if signedIn();
       allow create, update, delete: if signedIn();
     }
@@ -35,23 +55,23 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, delete: if signedIn();
 
-      // Clients may drive state and edit configuration, but the field list is
-      // closed: an unknown field name is rejected rather than silently stored,
-      // which keeps the three clients honest about the schema.
+      // The field list is closed: an unknown field name is rejected rather
+      // than silently stored. With three separate clients writing to one
+      // collection, that is what keeps them honest about the schema -- a typo
+      // fails loudly instead of creating a field nobody reads.
       allow update: if signedIn()
         && validStatus()
+        && noBackendOnlyFields()
         && changed().hasOnly([
-             'status', 'turnedOnAt', 'statusReason',
-             'channels', 'lastHeartbeat',
-             'updatedBy', 'updatedAt',
-             'name', 'room', 'gridX', 'gridY',
-             'maxOnDurationMinutes', 'streamUrl', 'floorId'
+             'id', 'name', 'type', 'roomId', 'floorId',
+             'status', 'statusReason', 'turnedOnAt',
+             'childSwitches', 'switches',
+             'maxOnDurationMinutes',
+             'scheduleStartTime', 'scheduleEndTime',
+             'scheduleDays', 'scheduleEnabled',
+             'cameraImageUrls', 'iconName', 'powerUsage',
+             'lastHeartbeat', 'updatedBy', 'lastUpdated'
            ]);
-    }
-
-    match /schedules/{scheduleId} {
-      allow read: if signedIn();
-      allow create, update, delete: if signedIn();
     }
 
     // Usage history is evidence. The worker writes it through the Admin SDK;
@@ -61,11 +81,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Alerts are raised by the worker. A client may only mark one as read.
+    // Alerts are raised by the worker. A client may only acknowledge one.
     match /alerts/{alertId} {
       allow read: if signedIn();
       allow create: if false;
-      allow update: if signedIn() && changed().hasOnly(['read']);
+      allow update: if signedIn() && changed().hasOnly(['acknowledged']);
       allow delete: if signedIn();
     }
 

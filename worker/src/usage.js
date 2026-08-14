@@ -1,110 +1,68 @@
 'use strict';
 
-const { db, toDate, log } = require('./firebase');
-const { COLLECTIONS, STATUS } = require('./constants');
+const { db, FieldValue, log } = require('./firebase');
+const { COLLECTIONS, USAGE_EVENT } = require('./constants');
 
 /**
  * Usage tracking.
  *
- * The worker is the only writer of `usage_logs`. It reacts to status
- * transitions rather than to user actions, so a device switched on from the web
- * simulator, by a schedule, or by hand in the Firestore console is measured
- * exactly the same way as one switched on from the phone.
+ * The worker is the only writer of `usage_logs`, and firestore.rules denies the
+ * collection to every client. Two reasons:
  *
- * An open session is a document with `offAt == null`. There is at most one per
- * device; [openSession] checks before inserting so a worker restart in the
- * middle of a long iron session does not create a second one.
+ *   1. Completeness. The worker reacts to *status transitions*, not to button
+ *      presses, so a device switched on from the simulator or by a schedule is
+ *      measured exactly like one switched on from the phone. If the app wrote
+ *      its own rows, everything that did not originate in the app would go
+ *      uncounted.
+ *
+ *   2. Integrity. One writer means no duplicate row when two clients react to
+ *      the same change, and usage that cannot be fabricated from a handset.
+ *
+ * The log is event-shaped: one row per transition. A row that ends a session
+ * carries the duration, so a report needs no pairing pass -- summing the
+ * `off` and `auto_off_safety` rows gives total ON time directly.
  */
 
 function logsRef() {
   return db().collection(COLLECTIONS.usageLogs);
 }
 
-async function findOpenSession(deviceId) {
-  const snap = await logsRef()
-    .where('deviceId', '==', deviceId)
-    .where('offAt', '==', null)
-    .limit(1)
-    .get();
-
-  return snap.empty ? null : snap.docs[0];
-}
-
-/** Start a session, unless one is already open for this device. */
-async function openSession(device) {
-  const existing = await findOpenSession(device.id);
-  if (existing) return existing.id;
-
-  // Prefer the device's own `turnedOnAt`: on a worker restart that is when the
-  // appliance actually came on, which may be long before the worker did.
-  const onAt = toDate(device.turnedOnAt) || new Date();
-
-  const ref = await logsRef().add({
+/**
+ * Record one transition.
+ *
+ * Duration is written in both seconds and minutes: minutes because
+ * firebase/SCHEMA.md specifies it, seconds because a two-minute safety demo
+ * rounds to a useless "2 min" and the report needs the real figure.
+ */
+async function recordEvent(device, event, durationSeconds = null) {
+  const row = {
     deviceId: device.id,
     deviceName: device.name || '',
-    floorId: device.floorId || '',
-    onAt,
-    offAt: null,
-    durationSeconds: null,
-    startedBy: device.updatedBy || null,
-    endedBy: null,
-  });
+    roomId: device.roomId || '',
+    event,
+    timestamp: FieldValue.serverTimestamp(),
+    createdBy: 'backend_worker',
+    durationOnSeconds: durationSeconds,
+    durationOnMinutes:
+      durationSeconds === null ? null : Math.round(durationSeconds / 60),
+  };
 
-  log(`usage: opened session for ${device.name}`);
-  return ref.id;
+  await logsRef().add(row);
+
+  const suffix =
+    durationSeconds === null ? '' : ` after ${durationSeconds}s`;
+  log(`usage: ${device.name || device.id} -> ${event}${suffix}`);
 }
 
-/** Close the open session, if there is one. */
-async function closeSession(device, endedBy) {
-  const open = await findOpenSession(device.id);
-  if (!open) return;
+const recordOn = (device) => recordEvent(device, USAGE_EVENT.on);
 
-  const onAt = toDate(open.get('onAt')) || new Date();
-  const offAt = new Date();
-  const durationSeconds = Math.max(
-    0,
-    Math.round((offAt.getTime() - onAt.getTime()) / 1000)
+const recordOff = (device, durationSeconds, wasCutOff = false) =>
+  recordEvent(
+    device,
+    wasCutOff ? USAGE_EVENT.autoOffSafety : USAGE_EVENT.off,
+    durationSeconds
   );
 
-  await open.ref.update({
-    offAt,
-    durationSeconds,
-    endedBy: endedBy || device.updatedBy || null,
-  });
+const recordFault = (device, event) => recordEvent(device, event);
 
-  log(`usage: closed session for ${device.name} after ${durationSeconds}s`);
-}
-
-/**
- * Bring the ledger back in line with reality after a restart.
- *
- * If the device is ON there must be an open session; if it is not, any session
- * left dangling by a crash is closed at the time the worker last saw sense --
- * we use the device's `updatedAt`, not now, so downtime is not billed as usage.
- */
-async function reconcile(device) {
-  if (device.status === STATUS.on) {
-    await openSession(device);
-    return;
-  }
-
-  const open = await findOpenSession(device.id);
-  if (!open) return;
-
-  const onAt = toDate(open.get('onAt')) || new Date();
-  const offAt = toDate(device.updatedAt) || new Date();
-  const durationSeconds = Math.max(
-    0,
-    Math.round((offAt.getTime() - onAt.getTime()) / 1000)
-  );
-
-  await open.ref.update({
-    offAt,
-    durationSeconds,
-    endedBy: 'reconciled',
-  });
-
-  log(`usage: reconciled stale session for ${device.name} (${durationSeconds}s)`);
-}
-
-module.exports = { openSession, closeSession, reconcile, findOpenSession };
+module.exports = { recordEvent, recordOn, recordOff, recordFault };

@@ -72,7 +72,7 @@ class NotificationService {
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(),
     );
-    await _local.initialize(initSettings);
+    await _local.initialize(settings: initSettings);
 
     await _local
         .resolvePlatformSpecificImplementation<
@@ -88,10 +88,10 @@ class NotificationService {
 
     _local.show(
       // Unique per notification so a second alert does not replace the first.
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      notification.title,
-      notification.body,
-      NotificationDetails(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: notification.title,
+      body: notification.body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _alertsChannel.id,
           _alertsChannel.name,

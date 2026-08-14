@@ -3,101 +3,99 @@
 require('dotenv').config();
 
 const { db, FieldValue, log } = require('./src/firebase');
-const { COLLECTIONS, STATUS, DEVICE_TYPE, SOURCE, REASON } = require('./src/constants');
+const { COLLECTIONS, STATUS, SOURCE, REASON, DEVICE_TYPE } = require('./src/constants');
 
 /**
- * Demo data.
+ * Demo data, matching firebase/SCHEMA.md.
  *
- * Document ids are fixed rather than generated, so re-running this overwrites
- * the same documents instead of piling up a second copy of the house. Run it as
- * often as you like.
+ * Document ids are fixed rather than generated, so re-running overwrites the
+ * same documents instead of piling up a second copy of the house. Run it as
+ * often as you like -- it is the fastest way back to a known state after a
+ * demo goes sideways.
  *
- *   npm run seed          write floors, devices and schedules
- *   npm run seed:wipe     delete usage logs and alerts first
+ *   npm run seed          write floors, rooms and devices
+ *   npm run seed:wipe     clear usage logs and alerts first
  */
 
 const FLOORS = [
   {
     id: 'floor_ground',
     name: 'Ground Floor',
-    level: 0,
-    planImageUrl: 'assets/floorplans/ground.png',
-    gridCols: 8,
-    gridRows: 6,
+    order: 0,
+    floorPlanImageUrl: null,
   },
   {
     id: 'floor_upper',
     name: 'Upper Floor',
-    level: 1,
-    planImageUrl: 'assets/floorplans/upper.png',
-    gridCols: 8,
-    gridRows: 6,
+    order: 1,
+    floorPlanImageUrl: null,
   },
+];
+
+const ROOMS = [
+  { id: 'room_living', floorId: 'floor_ground', name: 'Living Room', gridRow: 0, gridCol: 0 },
+  { id: 'room_kitchen', floorId: 'floor_ground', name: 'Kitchen', gridRow: 0, gridCol: 1 },
+  { id: 'room_porch', floorId: 'floor_ground', name: 'Porch', gridRow: 1, gridCol: 0 },
+  { id: 'room_utility', floorId: 'floor_ground', name: 'Utility', gridRow: 1, gridCol: 1 },
+  { id: 'room_bedroom', floorId: 'floor_upper', name: 'Master Bedroom', gridRow: 0, gridCol: 0 },
+  { id: 'room_study', floorId: 'floor_upper', name: 'Study', gridRow: 0, gridCol: 1 },
+  { id: 'room_hallway', floorId: 'floor_upper', name: 'Hallway', gridRow: 1, gridCol: 0 },
 ];
 
 const DEVICES = [
   // --- ground floor -------------------------------------------------------
   {
     id: 'dev_living_outlet',
-    floorId: 'floor_ground',
     name: 'Living Room Outlet',
+    roomId: 'room_living',
     type: DEVICE_TYPE.outlet,
-    room: 'Living Room',
-    gridX: 1,
-    gridY: 1,
   },
   {
     id: 'dev_tv_outlet',
-    floorId: 'floor_ground',
     name: 'TV Outlet',
+    roomId: 'room_living',
     type: DEVICE_TYPE.outlet,
-    room: 'Living Room',
-    gridX: 3,
-    gridY: 1,
   },
   {
     id: 'dev_kitchen_gang',
-    floorId: 'floor_ground',
     name: 'Kitchen Gang Box',
+    roomId: 'room_kitchen',
     type: DEVICE_TYPE.multiSwitch,
-    room: 'Kitchen',
-    gridX: 5,
-    gridY: 2,
-    channels: [
-      { index: 0, label: 'Ceiling Light', isOn: false },
-      { index: 1, label: 'Exhaust Fan', isOn: false },
-      { index: 2, label: 'Counter Light', isOn: false },
+    childSwitches: [
+      { id: 's0', label: 'Ceiling Light', isOn: false },
+      { id: 's1', label: 'Exhaust Fan', isOn: false },
+      { id: 's2', label: 'Counter Light', isOn: false },
     ],
   },
   {
     id: 'dev_porch_light',
-    floorId: 'floor_ground',
     name: 'Porch Light',
-    type: DEVICE_TYPE.light,
-    room: 'Porch',
-    gridX: 0,
-    gridY: 4,
+    roomId: 'room_porch',
+    type: DEVICE_TYPE.scheduledLight,
+    scheduleStartTime: '18:30',
+    scheduleEndTime: '22:00',
+    scheduleDays: [1, 2, 3, 4, 5, 6, 7],
+    scheduleEnabled: true,
   },
   {
     id: 'dev_front_camera',
-    floorId: 'floor_ground',
     name: 'Front Door Camera',
+    roomId: 'room_porch',
     type: DEVICE_TYPE.camera,
-    room: 'Porch',
-    gridX: 1,
-    gridY: 5,
-    // Mock stream. Any always-available image URL works for the demo.
-    streamUrl: 'https://picsum.photos/seed/frontdoor/640/360',
+    // Mock snapshots. Any always-available image URL works; the simulator
+    // rotates the array to fake a new frame.
+    cameraImageUrls: [
+      'https://picsum.photos/seed/frontdoor1/640/360',
+      'https://picsum.photos/seed/frontdoor2/640/360',
+      'https://picsum.photos/seed/frontdoor3/640/360',
+    ],
   },
   {
     id: 'dev_iron',
-    floorId: 'floor_ground',
     name: 'Clothes Iron',
-    type: DEVICE_TYPE.iron,
-    room: 'Utility',
-    gridX: 6,
-    gridY: 4,
-    // Two minutes so the cutoff is watchable in a demo video. A real iron
+    roomId: 'room_utility',
+    type: DEVICE_TYPE.scheduledAppliance,
+    // Two minutes so the cutoff is watchable inside a demo video. A real iron
     // would be 15-30; the mechanism is identical either way.
     maxOnDurationMinutes: 2,
   },
@@ -105,80 +103,47 @@ const DEVICES = [
   // --- upper floor --------------------------------------------------------
   {
     id: 'dev_bedroom_gang',
-    floorId: 'floor_upper',
     name: 'Bedroom Gang Box',
+    roomId: 'room_bedroom',
     type: DEVICE_TYPE.multiSwitch,
-    room: 'Master Bedroom',
-    gridX: 2,
-    gridY: 1,
-    channels: [
-      { index: 0, label: 'Ceiling Light', isOn: false },
-      { index: 1, label: 'Bedside Lamp', isOn: false },
+    childSwitches: [
+      { id: 's0', label: 'Ceiling Light', isOn: false },
+      { id: 's1', label: 'Bedside Lamp', isOn: false },
     ],
   },
   {
     id: 'dev_bedroom_outlet',
-    floorId: 'floor_upper',
     name: 'Bedroom Outlet',
+    roomId: 'room_bedroom',
     type: DEVICE_TYPE.outlet,
-    room: 'Master Bedroom',
-    gridX: 4,
-    gridY: 1,
   },
   {
     id: 'dev_study_light',
-    floorId: 'floor_upper',
     name: 'Study Light',
-    type: DEVICE_TYPE.light,
-    room: 'Study',
-    gridX: 6,
-    gridY: 2,
+    roomId: 'room_study',
+    type: DEVICE_TYPE.scheduledLight,
+    scheduleStartTime: '19:00',
+    scheduleEndTime: '23:00',
+    // Weeknights only -- proves the day filter in the demo.
+    scheduleDays: [1, 2, 3, 4, 5],
+    scheduleEnabled: true,
   },
   {
     id: 'dev_hallway_camera',
-    floorId: 'floor_upper',
     name: 'Hallway Camera',
+    roomId: 'room_hallway',
     type: DEVICE_TYPE.camera,
-    room: 'Hallway',
-    gridX: 3,
-    gridY: 4,
-    streamUrl: 'https://picsum.photos/seed/hallway/640/360',
+    cameraImageUrls: [
+      'https://picsum.photos/seed/hallway1/640/360',
+      'https://picsum.photos/seed/hallway2/640/360',
+    ],
   },
 ];
 
-const SCHEDULES = [
-  {
-    id: 'sch_porch_evening',
-    deviceId: 'dev_porch_light',
-    label: 'Porch light, evening',
-    startTime: '18:30',
-    endTime: '22:00',
-    daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
-    channelIndex: null,
-    enabled: true,
-  },
-  {
-    id: 'sch_study_weeknights',
-    deviceId: 'dev_study_light',
-    label: 'Study light, weeknights',
-    startTime: '19:00',
-    endTime: '23:00',
-    daysOfWeek: [1, 2, 3, 4, 5],
-    channelIndex: null,
-    enabled: true,
-  },
-  {
-    id: 'sch_kitchen_ceiling',
-    deviceId: 'dev_kitchen_gang',
-    label: 'Kitchen ceiling light, morning',
-    startTime: '06:00',
-    endTime: '08:00',
-    daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
-    // Targets one switch of the gang box, leaving the fan alone.
-    channelIndex: 0,
-    enabled: true,
-  },
-];
+function floorOf(roomId) {
+  const room = ROOMS.find((r) => r.id === roomId);
+  return room ? room.floorId : '';
+}
 
 async function deleteCollection(name) {
   const snap = await db().collection(name).get();
@@ -191,9 +156,7 @@ async function deleteCollection(name) {
 }
 
 async function seed() {
-  const wipe = process.argv.includes('--wipe');
-
-  if (wipe) {
+  if (process.argv.includes('--wipe')) {
     await deleteCollection(COLLECTIONS.usageLogs);
     await deleteCollection(COLLECTIONS.alerts);
   }
@@ -201,45 +164,49 @@ async function seed() {
   const batch = db().batch();
 
   for (const floor of FLOORS) {
-    const { id, ...data } = floor;
-    batch.set(db().collection(COLLECTIONS.floors).doc(id), {
-      ...data,
-      createdAt: FieldValue.serverTimestamp(),
+    batch.set(db().collection(COLLECTIONS.floors).doc(floor.id), floor);
+  }
+
+  for (const room of ROOMS) {
+    batch.set(db().collection(COLLECTIONS.rooms).doc(room.id), {
+      ...room,
+      // Denormalised so a room card can show a count without a second query.
+      deviceIds: DEVICES.filter((d) => d.roomId === room.id).map((d) => d.id),
     });
   }
 
   for (const device of DEVICES) {
-    const { id, ...data } = device;
-    batch.set(db().collection(COLLECTIONS.devices).doc(id), {
-      channels: [],
+    batch.set(db().collection(COLLECTIONS.devices).doc(device.id), {
+      // Explicit nulls so every document has the same shape -- a missing field
+      // and a null one behave differently in Firestore queries.
+      childSwitches: [],
       maxOnDurationMinutes: null,
-      streamUrl: null,
+      scheduleStartTime: null,
+      scheduleEndTime: null,
+      scheduleDays: null,
+      scheduleEnabled: false,
+      cameraImageUrls: null,
       lastHeartbeat: null,
-      ...data,
-      // Seeding always parks the house in a known state.
+      lastAlert: null,
+      lastAlertAt: null,
+      ...device,
+      floorId: floorOf(device.roomId),
+      // Seeding always parks the house in a known state. A device left ON with
+      // a stale turnedOnAt would be cut off seconds later, which looks like a
+      // bug and is really just bad seed data.
       status: STATUS.off,
       turnedOnAt: null,
       statusReason: REASON.manual,
       updatedBy: SOURCE.worker,
-      updatedAt: FieldValue.serverTimestamp(),
-      createdAt: FieldValue.serverTimestamp(),
-    });
-  }
-
-  for (const schedule of SCHEDULES) {
-    const { id, ...data } = schedule;
-    batch.set(db().collection(COLLECTIONS.schedules).doc(id), {
-      ...data,
-      lastRunAt: null,
-      createdAt: FieldValue.serverTimestamp(),
+      lastUpdated: FieldValue.serverTimestamp(),
     });
   }
 
   await batch.commit();
 
   log(
-    `seeded ${FLOORS.length} floors, ${DEVICES.length} devices, ` +
-      `${SCHEDULES.length} schedules`
+    `seeded ${FLOORS.length} floors, ${ROOMS.length} rooms, ` +
+      `${DEVICES.length} devices`
   );
 }
 

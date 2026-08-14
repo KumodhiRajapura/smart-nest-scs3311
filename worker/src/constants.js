@@ -1,30 +1,34 @@
 'use strict';
 
 /**
- * Collection names and enum values, mirrored from lib/services/firestore_refs.dart
- * and lib/models/device.dart. If you rename something there, rename it here.
+ * Collection names and enum values.
+ *
+ * Mirrored from lib/config/firestore_paths.dart and
+ * web-simulator/src/services/firebase.ts. Canonical definition lives in
+ * firebase/SCHEMA.md -- if you rename something there, rename it in all three.
  */
 
 const COLLECTIONS = {
   floors: 'floors',
+  rooms: 'rooms',
   devices: 'devices',
-  schedules: 'schedules',
   usageLogs: 'usage_logs',
   alerts: 'alerts',
 };
 
+// Lowercase on the wire. The UI uppercases them for display, which is what the
+// specification shows (ON / OFF / ERROR / DISCONNECTED).
 const STATUS = {
-  on: 'ON',
-  off: 'OFF',
-  error: 'ERROR',
-  disconnected: 'DISCONNECTED',
+  on: 'on',
+  off: 'off',
+  error: 'error',
+  disconnected: 'disconnected',
 };
 
 const SOURCE = {
-  app: 'app',
-  worker: 'worker',
+  app: 'mobile_app',
   simulator: 'simulator',
-  schedule: 'schedule',
+  worker: 'backend_worker',
 };
 
 const REASON = {
@@ -32,6 +36,7 @@ const REASON = {
   safetyCutoff: 'safety_cutoff',
   schedule: 'schedule',
   heartbeatLost: 'heartbeat_lost',
+  heartbeatRecovered: 'heartbeat_recovered',
   simulatorFault: 'simulator_fault',
 };
 
@@ -42,12 +47,35 @@ const ALERT_TYPE = {
   scheduleRun: 'schedule_run',
 };
 
+const SEVERITY = {
+  info: 'info',
+  warning: 'warning',
+  critical: 'critical',
+};
+
 const DEVICE_TYPE = {
   outlet: 'outlet',
-  multiSwitch: 'multiswitch',
-  light: 'light',
-  iron: 'iron',
+  multiSwitch: 'multiSwitch',
+  scheduledAppliance: 'scheduledAppliance',
+  scheduledLight: 'scheduledLight',
   camera: 'camera',
 };
 
-module.exports = { COLLECTIONS, STATUS, SOURCE, REASON, ALERT_TYPE, DEVICE_TYPE };
+const USAGE_EVENT = {
+  on: 'on',
+  off: 'off',
+  autoOffSafety: 'auto_off_safety',
+  error: 'error',
+  disconnected: 'disconnected',
+};
+
+module.exports = {
+  COLLECTIONS,
+  STATUS,
+  SOURCE,
+  REASON,
+  ALERT_TYPE,
+  SEVERITY,
+  DEVICE_TYPE,
+  USAGE_EVENT,
+};
