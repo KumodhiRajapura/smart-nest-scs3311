@@ -389,8 +389,23 @@ external write reached an `onSnapshot` listener in **416 ms** — the listener
 cannot tell which client caused the change, which is why one measurement
 underwrites all three directions.
 
-Row 13 is the remaining manual pass; it needs a person changing the browser's
-network state.
+**Row 13 has not been run.** It is the one outstanding check. To do it, with the
+worker, the simulator and the app all up:
+
+1. In the app's Chrome tab: `F12`, then `Ctrl+Shift+P` → **Go offline**. That
+   takes only this tab off the network, so the simulator stays connected.
+2. Toggle a device in the app. The switch moves immediately — the local cache
+   fires the snapshot before any server sees it.
+3. Look at the simulator: nothing has changed. That is the part worth watching,
+   because it shows the write is genuinely queued rather than merely slow.
+4. Back in the app tab: `Ctrl+Shift+P` → **Go online**. The simulator catches up
+   within about a second.
+
+Running the app in Chrome rather than on a handset does not weaken steps 1–4:
+the optimistic write and the replay come from the SDK's in-memory queue, not
+from `persistenceEnabled`. What that flag buys on web is an IndexedDB cache that
+survives a reload — so the one variant that would behave differently in Chrome
+is reloading the page while still offline, which this row does not do.
 
 Row 12 found two bugs, both fixed. The refusal in `toggleDevice` worked, but no
 screen caught the `AppException`, so the write was rejected and the user saw
