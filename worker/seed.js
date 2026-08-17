@@ -4,19 +4,6 @@ require('dotenv').config();
 
 const { db, FieldValue, log } = require('./src/firebase');
 const { COLLECTIONS, STATUS, SOURCE, REASON, DEVICE_TYPE } = require('./src/constants');
-
-/**
- * Demo data, matching firebase/SCHEMA.md.
- *
- * Document ids are fixed rather than generated, so re-running overwrites the
- * same documents instead of piling up a second copy of the house. Run it as
- * often as you like -- it is the fastest way back to a known state after a
- * demo goes sideways.
- *
- *   npm run seed          write floors, rooms and devices
- *   npm run seed:wipe     clear usage logs and alerts first
- */
-
 const FLOORS = [
   {
     id: 'floor_ground',
@@ -43,7 +30,6 @@ const ROOMS = [
 ];
 
 const DEVICES = [
-  // --- ground floor -------------------------------------------------------
   {
     id: 'dev_living_outlet',
     name: 'Living Room Outlet',
@@ -82,8 +68,6 @@ const DEVICES = [
     name: 'Front Door Camera',
     roomId: 'room_porch',
     type: DEVICE_TYPE.camera,
-    // Mock snapshots. Any always-available image URL works; the simulator
-    // rotates the array to fake a new frame.
     cameraImageUrls: [
       '/mock-cameras/front_porch.jpg?frame=1',
       '/mock-cameras/front_porch.jpg?frame=2',
@@ -95,12 +79,10 @@ const DEVICES = [
     name: 'Clothes Iron',
     roomId: 'room_utility',
     type: DEVICE_TYPE.scheduledAppliance,
-    // Two minutes so the cutoff is watchable inside a demo video. A real iron
-    // would be 15-30; the mechanism is identical either way.
+
     maxOnDurationMinutes: 2,
   },
 
-  // --- upper floor --------------------------------------------------------
   {
     id: 'dev_bedroom_gang',
     name: 'Bedroom Gang Box',
@@ -124,7 +106,6 @@ const DEVICES = [
     type: DEVICE_TYPE.scheduledLight,
     scheduleStartTime: '19:00',
     scheduleEndTime: '23:00',
-    // Weeknights only -- proves the day filter in the demo.
     scheduleDays: [1, 2, 3, 4, 5],
     scheduleEnabled: true,
   },
@@ -170,15 +151,12 @@ async function seed() {
   for (const room of ROOMS) {
     batch.set(db().collection(COLLECTIONS.rooms).doc(room.id), {
       ...room,
-      // Denormalised so a room card can show a count without a second query.
       deviceIds: DEVICES.filter((d) => d.roomId === room.id).map((d) => d.id),
     });
   }
 
   for (const device of DEVICES) {
     batch.set(db().collection(COLLECTIONS.devices).doc(device.id), {
-      // Explicit nulls so every document has the same shape -- a missing field
-      // and a null one behave differently in Firestore queries.
       childSwitches: [],
       maxOnDurationMinutes: null,
       scheduleStartTime: null,
@@ -191,9 +169,6 @@ async function seed() {
       lastAlertAt: null,
       ...device,
       floorId: floorOf(device.roomId),
-      // Seeding always parks the house in a known state. A device left ON with
-      // a stale turnedOnAt would be cut off seconds later, which looks like a
-      // bug and is really just bad seed data.
       status: STATUS.off,
       turnedOnAt: null,
       statusReason: REASON.manual,

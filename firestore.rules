@@ -1,24 +1,5 @@
 rules_version = '2';
 
-// Security rules for Smart Nest.
-//
-// Canonical schema: firebase/SCHEMA.md
-//
-// Two kinds of caller reach Firestore through these rules:
-//
-//   * the Flutter app     -- signed in with email/password or Google
-//   * the web simulator   -- signed in anonymously
-//
-// The backend worker uses the Admin SDK, which bypasses rules entirely. That
-// asymmetry is the design: anything only the worker may write is simply denied
-// to everybody here, and the worker still writes it.
-//
-// There is no `ownerId` scoping. This is one shared house -- the app, the
-// simulator and the worker all look at the same devices. Per-user devices would
-// make the simulator unable to mirror the app at all.
-//
-// Deploy:  firebase deploy --only firestore:rules
-
 service cloud.firestore {
   match /databases/{database}/documents {
 

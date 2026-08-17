@@ -1,12 +1,5 @@
 'use strict';
 
-/**
- * Collection names and enum values.
- *
- * Mirrored from lib/config/firestore_paths.dart and
- * web-simulator/src/services/firebase.ts. Canonical definition lives in
- * firebase/SCHEMA.md -- if you rename something there, rename it in all three.
- */
 
 const COLLECTIONS = {
   floors: 'floors',
@@ -16,8 +9,6 @@ const COLLECTIONS = {
   alerts: 'alerts',
 };
 
-// Lowercase on the wire. The UI uppercases them for display, which is what the
-// specification shows (ON / OFF / ERROR / DISCONNECTED).
 const STATUS = {
   on: 'on',
   off: 'off',

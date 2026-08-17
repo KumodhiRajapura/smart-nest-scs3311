@@ -4,33 +4,12 @@ const { log } = require('./firebase');
 const { STATUS, REASON, SOURCE } = require('./constants');
 const { setPower } = require('./deviceControl');
 
-/**
- * Time-of-day automation for lights and anything else with a preset window.
- *
- * Schedules live on the device document itself (`scheduleStartTime`,
- * `scheduleEndTime`, `scheduleDays`, `scheduleEnabled`) as defined in
- * firebase/SCHEMA.md, so this reads from the device cache the main listener
- * already maintains -- no extra query every tick, and no read cost for sitting
- * still.
- *
- * **Edge-triggered, not level-triggered.** The worker acts on the minute a
- * window opens and the minute it closes, and ignores the time in between. That
- * is what lets a manual override stand: switch the porch light off at 20:00 and
- * it stays off, instead of being switched back on twenty seconds later by a
- * worker insisting the window is still open. The next boundary takes over
- * again.
- *
- * Times are wall-clock strings, so this process must run in the timezone the
- * schedules were written in. Set TZ=Asia/Colombo before starting it.
- */
+
 
 const TICK_SECONDS = Number(process.env.SCHEDULE_TICK_SECONDS || 20);
 
-/** Apply windows that are already open when the worker starts. */
 const CATCH_UP = String(process.env.SCHEDULE_CATCHUP || 'false') === 'true';
 
-// `${deviceId}:${hh:mm}` for boundaries already handled, so a 20-second tick
-// does not fire the same boundary three times inside its minute.
 let firedThisMinute = new Set();
 let currentMinute = '';
 
@@ -42,7 +21,6 @@ function hhmm(date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** ISO weekday: Monday = 1 ... Sunday = 7, matching Dart's DateTime.weekday. */
 function isoWeekday(date) {
   return date.getDay() === 0 ? 7 : date.getDay();
 }
@@ -52,11 +30,9 @@ function toMinutes(value) {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** A device takes part in scheduling only if it has both ends of a window. */
 function hasSchedule(device) {
   if (!device.scheduleStartTime || !device.scheduleEndTime) return false;
-  // Absent means enabled: documents written before the flag existed should
-  // still run rather than silently going dark.
+
   return device.scheduleEnabled !== false;
 }
 

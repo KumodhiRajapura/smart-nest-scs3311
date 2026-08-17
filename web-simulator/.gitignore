@@ -1,7 +1,5 @@
 node_modules/
 dist/
 
-# Project-specific Firebase config. Not secret, but each member fills in their
-# own -- see .env.example.
 .env
 .env.local

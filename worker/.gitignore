@@ -1,8 +1,5 @@
 node_modules/
 
-# Service account private key. This grants full admin access to the Firebase
-# project and bypasses every security rule -- committing it is the single worst
-# mistake you can make in this repo.
 serviceAccount.json
 *serviceAccount*.json
 .env

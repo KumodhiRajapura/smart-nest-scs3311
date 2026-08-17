@@ -11,23 +11,6 @@ const {
 } = require('./constants');
 const { raiseAlert } = require('./notify');
 
-/**
- * Server-side safety cutoff.
- *
- * The rule: a device carrying `maxOnDurationMinutes` may not stay ON longer
- * than that. When the budget runs out the worker flips the database to OFF and
- * raises an alert. The phone does not have to be awake, unlocked, or even in
- * the building -- which is the entire point of the requirement. A cutoff that
- * lived in the app would not fire for an app that had been swiped away, and an
- * iron does not care whether anyone is looking at it.
- *
- * The countdown is derived, never stored. `turnedOnAt + maxOnDurationMinutes`
- * is the deadline, recomputed whenever the worker sees the device, so
- * restarting mid-session re-arms with the correct remaining time instead of
- * granting a fresh budget.
- */
-
-// deviceId -> Timeout
 const timers = new Map();
 
 // setTimeout fires immediately past this, so long budgets are armed in chunks.
@@ -46,13 +29,6 @@ function disarm(deviceId) {
   }
 }
 
-/**
- * (Re)arm the cutoff for a device.
- *
- * Safe to call on every snapshot -- it always clears the previous timer first,
- * so shortening `maxOnDurationMinutes` on a running iron takes effect at once
- * rather than at the start of the next session.
- */
 function arm(device) {
   disarm(device.id);
 
@@ -61,8 +37,7 @@ function arm(device) {
 
   const turnedOnAt = toDate(device.turnedOnAt);
   if (!turnedOnAt) {
-    // The server timestamp has not resolved yet. The write that resolves it
-    // produces another snapshot, and that one arms the timer properly.
+
     return;
   }
 
@@ -73,7 +48,7 @@ function arm(device) {
     device.id,
     setTimeout(() => {
       if (remaining > MAX_TIMEOUT_MS) {
-        arm(device); // long budget: keep counting in the next chunk
+        arm(device); 
       } else {
         cutOff(device.id).catch((err) => log(`cutoff failed: ${err.message}`));
       }
@@ -83,13 +58,7 @@ function arm(device) {
   log(`safety: ${device.name} armed, ${Math.round(remaining / 1000)}s remaining`);
 }
 
-/**
- * Flip a device OFF because its budget expired.
- *
- * The read-check-write runs in a transaction so a cutoff cannot land on a
- * session it was not armed for: someone who switches the iron off and straight
- * back on would otherwise have the *old* timer cut off their *new* session.
- */
+
 async function cutOff(deviceId) {
   const ref = db().collection(COLLECTIONS.devices).doc(deviceId);
 
@@ -104,8 +73,6 @@ async function cutOff(deviceId) {
     const turnedOnAt = toDate(device.turnedOnAt);
     if (!budget || !turnedOnAt) return null;
 
-    // A second of slack absorbs clock jitter between this process and the
-    // Firestore servers.
     const elapsed = Date.now() - turnedOnAt.getTime();
     if (elapsed + 1000 < budget) return { rearm: device };
 
@@ -132,7 +99,6 @@ async function cutOff(deviceId) {
 
   if (!result) return;
 
-  // The session was newer than the timer thought -- start the clock again.
   if (result.rearm) {
     arm(result.rearm);
     return;

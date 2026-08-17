@@ -3,15 +3,6 @@
 const { db, FieldValue, log } = require('./firebase');
 const { COLLECTIONS, STATUS, SOURCE, REASON } = require('./constants');
 
-/**
- * Writes to the `devices` collection made on the system's behalf.
- *
- * Mirrors FirestoreService on the Flutter side, including the `turnedOnAt`
- * rules. The safety worker cannot tell who wrote a status, so every writer has
- * to maintain that field identically or the countdown breaks for everyone.
- */
-
-/** Switch a device, or one child switch of a gang box, on or off. */
 async function setPower({
   deviceId,
   on,
@@ -30,9 +21,6 @@ async function setPower({
 
     const device = snap.data();
 
-    // Never fight the hardware. A device the simulator reports as faulty or
-    // unreachable stays that way until it says otherwise -- a schedule must not
-    // paint a broken appliance as running.
     if (device.status === STATUS.error || device.status === STATUS.disconnected) {
       log(`control: ${device.name} is ${device.status}, skipping`);
       return;
@@ -64,8 +52,6 @@ async function setPower({
     const wasOn = device.status === STATUS.on;
     const willBeOn = update.status === STATUS.on;
 
-    // Only a genuine OFF -> ON edge restarts the safety clock. Re-applying a
-    // schedule to a device that is already running must not extend its budget.
     if (willBeOn && !wasOn) update.turnedOnAt = FieldValue.serverTimestamp();
     if (!willBeOn) update.turnedOnAt = null;
 
@@ -73,7 +59,6 @@ async function setPower({
   });
 }
 
-/** Force a status the user cannot set, e.g. DISCONNECTED from the watchdog. */
 async function setStatus({ deviceId, status, reason }) {
   await db()
     .collection(COLLECTIONS.devices)
