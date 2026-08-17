@@ -32,3 +32,20 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Android build files
+android/.gradle/
+android/build/
+android/app/build/
+
+# Flutter generated files
+.dart_tool/
+build/
+
+# IDE files
+.idea/
+*.iml
+
+# Flutter generated plugins
+.flutter-plugins
+.flutter-plugins-dependencies
