@@ -84,10 +84,8 @@ const DEVICES = [
     type: DEVICE_TYPE.camera,
     // Mock snapshots. Any always-available image URL works; the simulator
     // rotates the array to fake a new frame.
-    cameraImageUrls: [
-      'https://picsum.photos/seed/frontdoor1/640/360',
-      'https://picsum.photos/seed/frontdoor2/640/360',
-      'https://picsum.photos/seed/frontdoor3/640/360',
+     cameraImageUrls: [
+      'https://raw.githubusercontent.com/KumodhiRajapura/smart-nest-scs3311/main/assets/images/cameras/front_porch.jpg',
     ],
   },
   {
