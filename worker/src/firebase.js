@@ -4,15 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 
-/**
- * Admin SDK bootstrap.
- *
- * The Admin SDK talks to Firestore as a service account, which means it
- * bypasses security rules entirely. That is exactly what we want for a trusted
- * worker -- the rules can stay tight enough to reject a rogue client while the
- * worker still writes the fields no client is allowed to touch (safety
- * cutoffs, usage logs).
- */
 
 let app = null;
 
@@ -52,15 +43,28 @@ function messaging() {
 
 const { FieldValue, Timestamp } = admin.firestore;
 
-/** Firestore timestamp -> JS Date, tolerating nulls and already-Date values. */
 function toDate(value) {
   if (!value) return null;
-  if (value instanceof Date) return value;
-  if (typeof value.toDate === 'function') return value.toDate();
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value.toDate === 'function') {
+    return value.toDate();
+  }
+
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
   return null;
 }
 
-/** Timestamped console line, so the log reads like a device log. */
 function log(...args) {
   const now = new Date().toISOString().slice(11, 19);
   console.log(`[${now}]`, ...args);
