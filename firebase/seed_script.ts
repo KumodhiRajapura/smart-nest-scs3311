@@ -14,8 +14,8 @@ const db = admin.firestore();
 
 async function seed() {
   // Floors
-  const f1 = { id: 'floor1', name: 'Ground Floor', order: 0 };
-  const f2 = { id: 'floor2', name: 'First Floor', order: 1 };
+  const f1 = { id: 'floor1', name: 'Ground Floor', order: 0, floorPlanImageUrl: 'assets/images/floor_plans/ground_floor.png' };
+  const f2 = { id: 'floor2', name: 'First Floor', order: 1, floorPlanImageUrl: 'assets/images/floor_plans/upper_floor.png' };
   await db.collection('floors').doc(f1.id).set(f1);
   await db.collection('floors').doc(f2.id).set(f2);
 
@@ -33,7 +33,7 @@ async function seed() {
     { id: 'multi1', roomId: r1.id, floorId: f1.id, name: 'Living Multi', type: 'multiSwitch', status: 'off', childSwitches: [{id:'s1',label:'Ceiling',isOn:false},{id:'s2',label:'Fan',isOn:false}], updatedBy: 'backend_worker', lastUpdated: admin.firestore.FieldValue.serverTimestamp() },
     { id: 'iron1', roomId: r2.id, floorId: f1.id, name: 'Clothes Iron', type: 'scheduledAppliance', status: 'off', maxOnDurationMinutes: 15, updatedBy: 'backend_worker', lastUpdated: admin.firestore.FieldValue.serverTimestamp() },
     { id: 'bulb1', roomId: r3.id, floorId: f2.id, name: 'Bedroom Light', type: 'scheduledLight', status: 'off', scheduleStartTime: '19:00', scheduleEndTime: '23:00', updatedBy: 'backend_worker', lastUpdated: admin.firestore.FieldValue.serverTimestamp() },
-    { id: 'cam1', roomId: r1.id, floorId: f1.id, name: 'Front Door Cam', type: 'camera', status: 'on', cameraImageUrls: ['https://placehold.co/400x300','https://placehold.co/400x300?text=2'], updatedBy: 'backend_worker', lastUpdated: admin.firestore.FieldValue.serverTimestamp() }
+    { id: 'cam1', roomId: r1.id, floorId: f1.id, name: 'Front Door Cam', type: 'camera', status: 'on', cameraImageUrls: ['/mock-cameras/front_porch.jpg?frame=1', '/mock-cameras/front_porch.jpg?frame=2'], updatedBy: 'backend_worker', lastUpdated: admin.firestore.FieldValue.serverTimestamp() }
   ];
 
   for (const d of devices) {

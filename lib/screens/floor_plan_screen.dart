@@ -6,14 +6,8 @@ import 'package:smart_nest_app/screens/floor_dashboard_screen.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
 import 'package:smart_nest_app/widgets/device_action.dart';
 
-/// The abstract grid mapping for a single floor.
-///
-/// Rooms place themselves by `gridRow` / `gridCol`, so the layout is exactly
-/// as wide and tall as the furthest room in either direction -- there is no
-/// separate "floor size" to keep in sync. A background floor-plan image can
-/// be dropped behind the grid later by setting `floorPlanImageAsset` on the
-/// [FloorModel]; until then the grid stands on its own, which is enough to
-/// demonstrate the room layout without needing real floor-plan artwork.
+/// Floor representation required by SCS 3311: a sample plan is shown as the
+/// background and the live room grid is overlaid on top of it.
 class FloorPlanScreen extends StatelessWidget {
   final FloorModel floor;
 
@@ -24,12 +18,10 @@ class FloorPlanScreen extends StatelessWidget {
     int gridRow = 0;
     int gridCol = 0;
 
-    // Suggest the next free cell in row-major order so a demo doesn't have
-    // to think about coordinates.
     final occupied = existingRooms.map((r) => '${r.gridRow}:${r.gridCol}').toSet();
     outer:
-    for (var r = 0; r < 6; r++) {
-      for (var c = 0; c < 4; c++) {
+    for (var r = 0; r < 8; r++) {
+      for (var c = 0; c < 6; c++) {
         if (!occupied.contains('$r:$c')) {
           gridRow = r;
           gridCol = c;
@@ -74,10 +66,7 @@ class FloorPlanScreen extends StatelessWidget {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop({
                 'name': nameController.text.trim(),
@@ -92,7 +81,6 @@ class FloorPlanScreen extends StatelessWidget {
     );
 
     if (result == null || (result['name'] as String).isEmpty || !context.mounted) return;
-
     await runDeviceAction(
       context,
       () => CloudSyncService().createRoom(
@@ -102,6 +90,27 @@ class FloorPlanScreen extends StatelessWidget {
         gridCol: result['col'] as int,
       ),
     );
+  }
+
+  Future<void> _deleteRoom(BuildContext context, Room room) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete ${room.name}?'),
+        content: const Text('This also removes devices assigned to the room.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    await runDeviceAction(context, () => CloudSyncService().deleteRoom(room.id));
   }
 
   @override
@@ -118,12 +127,12 @@ class FloorPlanScreen extends StatelessWidget {
       body: StreamBuilder<List<Room>>(
         stream: cloud.roomsForFloorStream(floor.id),
         builder: (context, roomSnap) {
-          final rooms = roomSnap.data ?? const [];
+          final rooms = roomSnap.data ?? const <Room>[];
 
           return StreamBuilder<List<SmartDevice>>(
             stream: cloud.devicesStream(),
             builder: (context, deviceSnap) {
-              final devices = deviceSnap.data ?? const [];
+              final devices = deviceSnap.data ?? const <SmartDevice>[];
 
               if (rooms.isEmpty) {
                 return _EmptyRooms(onAdd: () => _addRoom(context, rooms));
@@ -136,56 +145,12 @@ class FloorPlanScreen extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE7EAFB)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.grid_view_rounded, color: Colors.indigo.shade400, size: 18),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Room grid',
-                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Tap a room to see and control its devices',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                        ),
-                        const SizedBox(height: 16),
-                        for (var row = 0; row <= maxRow; row++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              children: [
-                                for (var col = 0; col <= maxCol; col++)
-                                  Expanded(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(right: col == maxCol ? 0 : 10),
-                                      child: _GridCell(
-                                        room: byCell['$row:$col'],
-                                        devices: byCell['$row:$col'] == null
-                                            ? const []
-                                            : devices
-                                                .where((d) => d.roomId == byCell['$row:$col']!.id)
-                                                .toList(),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+                  _FloorMapCard(
+                    floor: floor,
+                    maxRow: maxRow,
+                    maxCol: maxCol,
+                    byCell: byCell,
+                    devices: devices,
                   ),
                   const SizedBox(height: 20),
                   const Text('Rooms', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
@@ -230,7 +195,15 @@ class FloorPlanScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
-                                Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                                PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    if (value == 'delete') _deleteRoom(context, room);
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(value: 'delete', child: Text('Delete room')),
+                                  ],
+                                ),
+                                const Icon(Icons.chevron_right_rounded, color: Colors.grey),
                               ],
                             ),
                           ),
@@ -247,7 +220,7 @@ class FloorPlanScreen extends StatelessWidget {
       floatingActionButton: StreamBuilder<List<Room>>(
         stream: cloud.roomsForFloorStream(floor.id),
         builder: (context, snap) {
-          final rooms = snap.data ?? const [];
+          final rooms = snap.data ?? const <Room>[];
           return FloatingActionButton.extended(
             onPressed: () => _addRoom(context, rooms),
             icon: const Icon(Icons.add_rounded),
@@ -259,23 +232,134 @@ class FloorPlanScreen extends StatelessWidget {
   }
 }
 
-class _GridCell extends StatelessWidget {
+class _FloorMapCard extends StatelessWidget {
+  final FloorModel floor;
+  final int maxRow;
+  final int maxCol;
+  final Map<String, Room> byCell;
+  final List<SmartDevice> devices;
+
+  const _FloorMapCard({
+    required this.floor,
+    required this.maxRow,
+    required this.maxCol,
+    required this.byCell,
+    required this.devices,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = maxRow + 1;
+    final cols = maxCol + 1;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE7EAFB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.map_outlined, color: Colors.indigo.shade400, size: 19),
+              const SizedBox(width: 8),
+              const Text('Interactive floor plan', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const Spacer(),
+              Text('$rows × $cols grid', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'The room grid is overlaid on a sample floor layout. Tap a room to control its devices.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 360,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _FloorPlanBackground(asset: floor.floorPlanImageAsset),
+                  Container(color: Colors.white.withAlpha((0.48 * 255).round())),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: GridView.builder(
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: rows * cols,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 1.45,
+                      ),
+                      itemBuilder: (context, index) {
+                        final row = index ~/ cols;
+                        final col = index % cols;
+                        final room = byCell['$row:$col'];
+                        final roomDevices = room == null
+                            ? const <SmartDevice>[]
+                            : devices.where((d) => d.roomId == room.id).toList();
+                        return _OverlayRoomCell(room: room, devices: roomDevices);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FloorPlanBackground extends StatelessWidget {
+  final String? asset;
+
+  const _FloorPlanBackground({required this.asset});
+
+  @override
+  Widget build(BuildContext context) {
+    if (asset == null || asset!.isEmpty) {
+      return Container(color: const Color(0xFFF8FAFC));
+    }
+    if (asset!.startsWith('assets/')) {
+      return Image.asset(
+        asset!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(color: const Color(0xFFF8FAFC)),
+      );
+    }
+    if (asset!.startsWith('http')) {
+      return Image.network(
+        asset!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(color: const Color(0xFFF8FAFC)),
+      );
+    }
+    return Container(color: const Color(0xFFF8FAFC));
+  }
+}
+
+class _OverlayRoomCell extends StatelessWidget {
   final Room? room;
   final List<SmartDevice> devices;
 
-  const _GridCell({required this.room, required this.devices});
+  const _OverlayRoomCell({required this.room, required this.devices});
 
   @override
   Widget build(BuildContext context) {
     if (room == null) {
-      return AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade200, style: BorderStyle.solid),
-          ),
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha((0.30 * 255).round()),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withAlpha((0.7 * 255).round())),
         ),
       );
     }
@@ -283,44 +367,39 @@ class _GridCell extends StatelessWidget {
     final activeCount = devices.where((d) => d.status == DeviceStatus.on).length;
     final hasError = devices.any((d) => d.status == DeviceStatus.error);
     final color = hasError
-        ? const Color(0xFFEF4444)
-        : (activeCount > 0 ? const Color(0xFF16A34A) : const Color(0xFF6366F1));
+        ? const Color(0xFFDC2626)
+        : activeCount > 0
+            ? const Color(0xFF16A34A)
+            : const Color(0xFF4F46E5);
 
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Material(
-        color: color.withAlpha((0.10 * 255).round()),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => FloorDashboardScreen(room: room!)),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: color.withAlpha((0.35 * 255).round())),
-            ),
-            padding: const EdgeInsets.all(6),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.meeting_room_rounded, color: color, size: 18),
-                const SizedBox(height: 4),
-                Text(
-                  room!.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color),
-                ),
-                if (devices.isNotEmpty)
-                  Text(
-                    '$activeCount/${devices.length}',
-                    style: TextStyle(fontSize: 9, color: color.withAlpha((0.85 * 255).round())),
-                  ),
-              ],
-            ),
+    return Material(
+      color: color.withAlpha((0.82 * 255).round()),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => FloorDashboardScreen(room: room!)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.meeting_room_rounded, color: Colors.white, size: 19),
+              const SizedBox(height: 4),
+              Text(
+                room!.name,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${devices.length} devices · $activeCount on',
+                style: const TextStyle(color: Colors.white70, fontSize: 9),
+              ),
+            ],
           ),
         ),
       ),
@@ -377,19 +456,15 @@ class _EmptyRooms extends StatelessWidget {
           children: [
             Icon(Icons.grid_view_outlined, size: 56, color: Colors.grey.shade400),
             const SizedBox(height: 16),
-            const Text('No rooms on this floor', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text('No rooms yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text(
-              'Add a room to place it on the grid.',
+              'Add rooms and place them on the floor grid.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey.shade600),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add room'),
-            ),
+            FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add_rounded), label: const Text('Add room')),
           ],
         ),
       ),

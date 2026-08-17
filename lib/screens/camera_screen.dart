@@ -74,9 +74,7 @@ class _CameraCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = device.status == DeviceStatus.on;
-    final uri = (device.cameraImageUrls != null && device.cameraImageUrls!.isNotEmpty)
-        ? device.cameraImageUrls!.first
-        : 'mock://cam/${device.id}/snapshot.jpg';
+    final uri = 'assets/images/cameras/front_porch.jpg';
 
     return Material(
       color: Colors.transparent,

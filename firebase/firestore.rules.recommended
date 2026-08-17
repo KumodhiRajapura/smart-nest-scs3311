@@ -1,60 +1,97 @@
 rules_version = '2';
+
+// Security rules for Smart Nest.
+//
+// Canonical schema: firebase/SCHEMA.md
+//
+// Two kinds of caller reach Firestore through these rules:
+//
+//   * the Flutter app     -- signed in with email/password or Google
+//   * the web simulator   -- signed in anonymously
+//
+// The backend worker uses the Admin SDK, which bypasses rules entirely. That
+// asymmetry is the design: anything only the worker may write is simply denied
+// to everybody here, and the worker still writes it.
+//
+// There is no `ownerId` scoping. This is one shared house -- the app, the
+// simulator and the worker all look at the same devices. Per-user devices would
+// make the simulator unable to mirror the app at all.
+//
+// Deploy:  firebase deploy --only firestore:rules
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow reads for all clients (mobile & simulator rely on live reads)
-    match /{document=**} {
-      allow read: if true;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Devices: clients may update allowed fields but must NOT set backend-only alert fields.
-    match /devices/{deviceId} {
-      function isValidType(t) {
-        return t in ['outlet','multiSwitch','scheduledAppliance','scheduledLight','camera'];
-      }
-      function isValidStatus(s) {
-        return s in ['on','off','error','disconnected'];
-      }
-
-      allow create, update: if request.auth != null
-        // Prevent client writes to alert fields (backend-only)
-        && !(request.resource.data.keys().hasAny(['lastAlert','lastAlertAt']))
-        // Validate enum fields if present
-        && ( !('type' in request.resource.data) || isValidType(request.resource.data.type) )
-        && ( !('status' in request.resource.data) || isValidStatus(request.resource.data.status) )
-        // Require lastUpdated when provided to be a timestamp (clients normally use serverTimestamp)
-        && ( !('lastUpdated' in request.resource.data) || request.resource.data.lastUpdated is timestamp );
-
-      // Deletion only allowed by backend-admins
-      allow delete: if request.auth != null && request.auth.token.admin == true;
+    // Which fields this update actually touches.
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    // Alerts: backend-only creation (Admin SDK or clients with admin claim)
-    match /alerts/{alertId} {
-      allow create: if request.auth != null && request.auth.token.admin == true;
-      allow update, delete: if request.auth != null && request.auth.token.admin == true;
+    function validStatus() {
+      return request.resource.data.status in ['on', 'off', 'error', 'disconnected'];
     }
 
-    // usageLogs: backend-only
-    match /usage_logs/{logId} {
-      allow create: if request.auth != null && request.auth.token.admin == true;
-      allow update, delete: if false;
+    // lastAlert / lastAlertAt are written by the worker only. A client that
+    // could set them could fake a safety alert on any device.
+    function noBackendOnlyFields() {
+      return !changed().hasAny(['lastAlert', 'lastAlertAt']);
     }
 
-    // Floors & Rooms: reading allowed; writing restricted to admins
     match /floors/{floorId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
     }
 
     match /rooms/{roomId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
     }
 
-    // Default deny for writes to other paths
-    match /{path=**} {
+    match /devices/{deviceId} {
+      allow read: if signedIn();
+      allow create, delete: if signedIn();
+
+      // The field list is closed: an unknown field name is rejected rather
+      // than silently stored. With three separate clients writing to one
+      // collection, that is what keeps them honest about the schema -- a typo
+      // fails loudly instead of creating a field nobody reads.
+      allow update: if signedIn()
+        && validStatus()
+        && noBackendOnlyFields()
+        && changed().hasOnly([
+             'id', 'name', 'type', 'roomId', 'floorId',
+             'status', 'statusReason', 'turnedOnAt',
+             'childSwitches', 'switches',
+             'maxOnDurationMinutes',
+             'scheduleStartTime', 'scheduleEndTime',
+             'scheduleDays', 'scheduleEnabled',
+             'cameraImageUrls', 'iconName', 'powerUsage',
+             'lastHeartbeat', 'updatedBy', 'lastUpdated'
+           ]);
+    }
+
+    // Usage history is evidence. The worker writes it through the Admin SDK;
+    // no client can add to it, edit it, or quietly erase a session.
+    match /usage_logs/{logId} {
+      allow read: if signedIn();
       allow write: if false;
+    }
+
+    // Alerts are raised by the worker. A client may only acknowledge one.
+    match /alerts/{alertId} {
+      allow read: if signedIn();
+      allow create: if false;
+      allow update: if signedIn() && changed().hasOnly(['acknowledged']);
+      allow delete: if signedIn();
+    }
+
+    // Anything not named above is closed.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

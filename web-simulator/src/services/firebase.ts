@@ -15,21 +15,6 @@ import {
   Unsubscribe,
 } from 'firebase/firestore'
 
-/**
- * The simulator's Firestore layer.
- *
- * No UI in here on purpose: the dashboard decides how an appliance looks, this
- * decides what it means to write one. Mirrors lib/services/firestore_service.dart
- * on the Flutter side -- the two clients share one database, so they have to
- * share one set of rules about how documents are maintained.
- *
- * Canonical schema: firebase/SCHEMA.md
- */
-
-// Config comes from web-simulator/.env (see .env.example). Vite inlines
-// anything prefixed VITE_ at build time. These keys are not secrets -- they
-// identify the project, they do not grant access. What protects the data is
-// firestore.rules plus an authenticated session.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -73,13 +58,6 @@ if (isFirebaseConfigured) {
   }
 }
 
-/**
- * Sign in anonymously.
- *
- * Not optional: firestore.rules require `request.auth != null`, so a simulator
- * that skips this gets an empty device list and a permission-denied buried in
- * the console. Call it once before attaching any listener.
- */
 export async function connect(): Promise<void> {
   if (!app || !db) {
     throw new Error(
@@ -97,7 +75,6 @@ function deviceRef(deviceId: string) {
   return doc(db, COLLECTIONS.devices, deviceId)
 }
 
-/** Stamped on every write, so the app and worker can tell our changes apart. */
 function stamp(reason?: string) {
   return {
     updatedBy: SOURCE,
@@ -106,15 +83,6 @@ function stamp(reason?: string) {
   }
 }
 
-// -------------------------------------------------------------------- reads
-
-/**
- * Live device list. Returns an unsubscribe function.
- *
- * onSnapshot, not a polling loop: a toggle on the phone lands here in a few
- * hundred milliseconds, which is what makes the simulator look like real
- * hardware reacting rather than a page that refreshes.
- */
 export function watchDevices(
   onData: (devices: any[]) => void,
   onError?: (err: Error) => void
@@ -153,55 +121,33 @@ export function watchFloors(
   )
 }
 
-// ------------------------------------------------------------------- writes
+export async function reportPower(
+  deviceId: string,
+  on: boolean
+): Promise<void> {
+  if (!db) {
+    throw new Error('Firestore is not available')
+  }
 
-/**
- * Someone pressed the physical switch on the appliance.
- *
- * Runs in a transaction, and returns early when the device is already in the
- * requested state. Without that guard, pressing ON on a device that is already
- * ON rewrites `turnedOnAt` and hands a running iron a brand new safety budget --
- * the cutoff would then never fire, and nothing would look wrong until
- * something caught fire.
- */
-export async function reportPower(deviceId: string, on: boolean): Promise<void> {
-  if (!db) throw new Error('Firestore is not available')
   const ref = deviceRef(deviceId)
 
-  await runTransaction(db, async (txn) => {
-    const snap = await txn.get(ref)
-    if (!snap.exists()) throw new Error(`No device ${deviceId}`)
+  console.log(
+    `[Smart Nest] Updating ${deviceId} -> ${on ? 'ON' : 'OFF'}`
+  )
 
-    const device = snap.data()
-    if (device.status === (on ? STATUS.on : STATUS.off)) return
-
-    const update: Record<string, unknown> = {
-      status: on ? STATUS.on : STATUS.off,
-      // A server timestamp: the safety countdown must not depend on the
-      // browser's clock, which the person running the demo can change.
-      turnedOnAt: on ? serverTimestamp() : null,
-      ...stamp('manual'),
-    }
-
-    if (Array.isArray(device.childSwitches) && device.childSwitches.length) {
-      update.childSwitches = device.childSwitches.map((c: any) => ({
-        ...c,
-        isOn: on,
-      }))
-    }
-
-    txn.update(ref, update)
+  await updateDoc(ref, {
+    status: on ? STATUS.on : STATUS.off,
+    turnedOnAt: on ? serverTimestamp() : null,
+    updatedBy: SOURCE,
+    statusReason: 'manual',
+    lastUpdated: serverTimestamp(),
   })
+
+  console.log(
+    `[Smart Nest] Successfully updated ${deviceId} -> ${on ? 'ON' : 'OFF'}`
+  )
 }
 
-/**
- * One child switch of a gang box.
- *
- * A transaction, because Firestore cannot update a single array element:
- * without it, two switches flipped at the same moment would each write back a
- * copy of the array that discards the other, and one change would vanish with
- * nothing to show it happened.
- */
 export async function reportChildSwitch(
   deviceId: string,
   switchId: string,
@@ -228,7 +174,6 @@ export async function reportChildSwitch(
       ...stamp('manual'),
     }
 
-    // Only a genuine OFF -> ON edge restarts the safety clock.
     if (anyOn && !wasOn) update.turnedOnAt = serverTimestamp()
     if (!anyOn) update.turnedOnAt = null
 
@@ -236,7 +181,6 @@ export async function reportChildSwitch(
   })
 }
 
-/** The appliance has failed. The worker turns this into an alert. */
 export async function reportFault(
   deviceId: string,
   message = 'simulated fault'
@@ -248,7 +192,6 @@ export async function reportFault(
   })
 }
 
-/** The appliance stopped answering. */
 export async function reportDisconnected(deviceId: string): Promise<void> {
   await updateDoc(deviceRef(deviceId), {
     status: STATUS.disconnected,
@@ -257,12 +200,6 @@ export async function reportDisconnected(deviceId: string): Promise<void> {
   })
 }
 
-/**
- * Recover from a fault or a disconnect.
- *
- * Comes back OFF rather than to whatever it was doing before: nobody knows what
- * the appliance did while it was unreachable, and ON is the dangerous guess.
- */
 export async function clearFault(deviceId: string): Promise<void> {
   await updateDoc(deviceRef(deviceId), {
     status: STATUS.off,
@@ -272,7 +209,6 @@ export async function clearFault(deviceId: string): Promise<void> {
   })
 }
 
-/** Rotate a camera's mock snapshots so the app shows a new frame. */
 export async function nextCameraFrame(
   deviceId: string,
   urls: string[]
@@ -288,22 +224,11 @@ export async function nextCameraFrame(
   })
 }
 
-/**
- * "I am still here."
- *
- * The worker's watchdog flips a device to DISCONNECTED when these stop. Note it
- * writes only `lastHeartbeat` -- stamping `updatedBy` on every beat would make
- * the app's "last changed by" useless, showing `simulator` every ten seconds no
- * matter who actually touched the device.
- */
+
 export async function heartbeat(deviceId: string): Promise<void> {
   await updateDoc(deviceRef(deviceId), { lastHeartbeat: serverTimestamp() })
 }
 
-/**
- * Beat for a set of devices on an interval. Returns a stop function.
- * Ten seconds against a 30-second timeout leaves room for two missed beats.
- */
 export function startHeartbeats(deviceIds: string[], intervalMs = 10000) {
   const beat = () => {
     deviceIds.forEach((id) =>

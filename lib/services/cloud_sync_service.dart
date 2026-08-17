@@ -202,12 +202,12 @@ class CloudSyncService {
 
   /// Create a new floor. Returns the new floor's id, or a placeholder id in
   /// demo mode (nothing is actually persisted without Firebase).
-  Future<String> createFloor({required String name, required int order}) async {
+  Future<String> createFloor({required String name, required int order, String? floorPlanImageUrl}) async {
     if (!_firebaseAvailable) {
       debugPrint('Demo mode: would create floor "$name"');
       return 'demo-floor-${DateTime.now().millisecondsSinceEpoch}';
     }
-    return _firestore.createFloor(name: name, order: order);
+    return _firestore.createFloor(name: name, order: order, floorPlanImageUrl: floorPlanImageUrl);
   }
 
   Future<void> deleteFloor(String floorId) async {
@@ -216,6 +216,24 @@ class CloudSyncService {
       return;
     }
     await _firestore.deleteFloor(floorId);
+  }
+
+  Future<void> updateFloor(
+    String floorId, {
+    String? name,
+    int? order,
+    String? floorPlanImageUrl,
+  }) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would update floor $floorId');
+      return;
+    }
+    await _firestore.updateFloor(
+      floorId,
+      name: name,
+      order: order,
+      floorPlanImageUrl: floorPlanImageUrl,
+    );
   }
 
   Future<String> createRoom({

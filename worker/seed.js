@@ -22,13 +22,13 @@ const FLOORS = [
     id: 'floor_ground',
     name: 'Ground Floor',
     order: 0,
-    floorPlanImageUrl: null,
+    floorPlanImageUrl: 'assets/images/floor_plans/ground_floor.png',
   },
   {
     id: 'floor_upper',
     name: 'Upper Floor',
     order: 1,
-    floorPlanImageUrl: null,
+    floorPlanImageUrl: 'assets/images/floor_plans/upper_floor.png',
   },
 ];
 
@@ -84,8 +84,10 @@ const DEVICES = [
     type: DEVICE_TYPE.camera,
     // Mock snapshots. Any always-available image URL works; the simulator
     // rotates the array to fake a new frame.
-     cameraImageUrls: [
-      'https://raw.githubusercontent.com/KumodhiRajapura/smart-nest-scs3311/main/assets/images/cameras/front_porch.jpg',
+    cameraImageUrls: [
+      '/mock-cameras/front_porch.jpg?frame=1',
+      '/mock-cameras/front_porch.jpg?frame=2',
+      '/mock-cameras/front_porch.jpg?frame=3',
     ],
   },
   {
@@ -132,8 +134,8 @@ const DEVICES = [
     roomId: 'room_hallway',
     type: DEVICE_TYPE.camera,
     cameraImageUrls: [
-      'https://picsum.photos/seed/hallway1/640/360',
-      'https://picsum.photos/seed/hallway2/640/360',
+      '/mock-cameras/front_porch.jpg?frame=hallway1',
+      '/mock-cameras/front_porch.jpg?frame=hallway2',
     ],
   },
 ];

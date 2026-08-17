@@ -16,15 +16,13 @@ class SmartHomeService {
         id: 'floor-1',
         name: 'Ground Floor',
         order: 0,
-        floorPlanImageAsset:
-            'https://images.pexels.com/photos/271667/pexels-photo-271667.jpeg?auto=compress&cs=tinysrgb&w=1200',
+        floorPlanImageAsset: 'assets/images/floor_plans/ground_floor.png',
       ),
       FloorModel(
         id: 'floor-2',
         name: 'Upper Floor',
         order: 1,
-        floorPlanImageAsset:
-            'https://images.pexels.com/photos/4458196/pexels-photo-4458196.jpeg?auto=compress&cs=tinysrgb&w=1200',
+        floorPlanImageAsset: 'assets/images/floor_plans/upper_floor.png',
       ),
     ];
   }
@@ -157,9 +155,7 @@ class SmartHomeService {
         roomId: 'room-garage',
         type: DeviceType.camera,
         status: DeviceStatus.disconnected,
-        cameraImageUrls: const [
-          'https://images.pexels.com/photos/9139588/pexels-photo-9139588.jpeg?auto=compress&cs=tinysrgb&w=1200'
-        ],
+        cameraImageUrls: const ['assets/images/cameras/front_porch.jpg'],
         powerUsage: 0.0,
       ),
     ];

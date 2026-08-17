@@ -1,36 +1,97 @@
 rules_version = '2';
+
+// Security rules for Smart Nest.
+//
+// Canonical schema: firebase/SCHEMA.md
+//
+// Two kinds of caller reach Firestore through these rules:
+//
+//   * the Flutter app     -- signed in with email/password or Google
+//   * the web simulator   -- signed in anonymously
+//
+// The backend worker uses the Admin SDK, which bypasses rules entirely. That
+// asymmetry is the design: anything only the worker may write is simply denied
+// to everybody here, and the worker still writes it.
+//
+// There is no `ownerId` scoping. This is one shared house -- the app, the
+// simulator and the worker all look at the same devices. Per-user devices would
+// make the simulator unable to mirror the app at all.
+//
+// Deploy:  firebase deploy --only firestore:rules
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
+
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(ownerId) {
-      return isSignedIn() && request.auth.uid == ownerId;
+    // Which fields this update actually touches.
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    match /devices/{deviceId} {
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid;
+    function validStatus() {
+      return request.resource.data.status in ['on', 'off', 'error', 'disconnected'];
+    }
 
-      allow read, update, delete: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid;
+    // lastAlert / lastAlertAt are written by the worker only. A client that
+    // could set them could fake a safety alert on any device.
+    function noBackendOnlyFields() {
+      return !changed().hasAny(['lastAlert', 'lastAlertAt']);
+    }
+
+    match /floors/{floorId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
     }
 
     match /rooms/{roomId} {
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid;
-
-      allow read, update, delete: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid;
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
     }
 
-    match /alerts/{alertId} {
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid;
+    match /devices/{deviceId} {
+      allow read: if signedIn();
+      allow create, delete: if signedIn();
 
-      allow read: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid;
+      // The field list is closed: an unknown field name is rejected rather
+      // than silently stored. With three separate clients writing to one
+      // collection, that is what keeps them honest about the schema -- a typo
+      // fails loudly instead of creating a field nobody reads.
+      allow update: if signedIn()
+        && validStatus()
+        && noBackendOnlyFields()
+        && changed().hasOnly([
+             'id', 'name', 'type', 'roomId', 'floorId',
+             'status', 'statusReason', 'turnedOnAt',
+             'childSwitches', 'switches',
+             'maxOnDurationMinutes',
+             'scheduleStartTime', 'scheduleEndTime',
+             'scheduleDays', 'scheduleEnabled',
+             'cameraImageUrls', 'iconName', 'powerUsage',
+             'lastHeartbeat', 'updatedBy', 'lastUpdated'
+           ]);
+    }
+
+    // Usage history is evidence. The worker writes it through the Admin SDK;
+    // no client can add to it, edit it, or quietly erase a session.
+    match /usage_logs/{logId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Alerts are raised by the worker. A client may only acknowledge one.
+    match /alerts/{alertId} {
+      allow read: if signedIn();
+      allow create: if false;
+      allow update: if signedIn() && changed().hasOnly(['acknowledged']);
+      allow delete: if signedIn();
+    }
+
+    // Anything not named above is closed.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

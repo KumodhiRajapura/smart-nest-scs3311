@@ -784,9 +784,7 @@ class _CameraPreviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uri = (device.cameraImageUrls != null && device.cameraImageUrls!.isNotEmpty)
-        ? device.cameraImageUrls!.first
-        : 'mock://cam/${device.id}/snapshot.jpg';
+    final uri = 'assets/images/cameras/front_porch.jpg';
     final live = device.status == DeviceStatus.on;
 
     return _Card(
