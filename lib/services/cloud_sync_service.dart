@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_nest_app/config/app_config.dart';
 import 'package:smart_nest_app/config/firestore_paths.dart';
 import 'package:smart_nest_app/models/device_model.dart';
+import 'package:smart_nest_app/models/floor_model.dart';
 import 'package:smart_nest_app/models/room_model.dart';
 import 'package:smart_nest_app/services/firestore_service.dart';
 import 'package:smart_nest_app/services/smart_home_service.dart';
@@ -96,6 +97,16 @@ class CloudSyncService {
     return _firestore.streamRoomsForFloor(floorId);
   }
 
+  /// Every configured floor, in display order.
+  ///
+  /// This is the top of the "Multi-Floor Interactive Dashboard": the floors
+  /// screen lists these, and each one opens onto its own abstract room grid.
+  Stream<List<FloorModel>> floorsStream() {
+    if (_useDemoData) return Stream.value(const SmartHomeService().getFloors());
+    if (!_firebaseAvailable) return const Stream.empty();
+    return _firestore.streamFloors();
+  }
+
   Future<List<SmartDevice>> fetchDevices() async {
     if (_useDemoData) return const SmartHomeService().getDevices();
     if (!_firebaseAvailable) return const [];
@@ -136,6 +147,133 @@ class CloudSyncService {
     await _firestore.toggleChildSwitchAt(deviceId, switchIndex, value);
   }
 
+  // ------------------------------------------------------------- scheduling
+
+  /// Set the safety budget (in minutes) for a fire-hazard appliance such as
+  /// an iron. The backend worker cuts power automatically once a running
+  /// device's elapsed ON time reaches this figure.
+  Future<void> updateApplianceSchedule(String deviceId, int maxOnMinutes) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would set max ON duration for $deviceId to $maxOnMinutes min');
+      return;
+    }
+    await _firestore.updateApplianceSchedule(deviceId, maxOnMinutes);
+  }
+
+  /// Set the automatic ON/OFF window for a scheduled light.
+  Future<void> updateLightSchedule(
+    String deviceId,
+    String startHHmm,
+    String endHHmm, {
+    bool enabled = true,
+  }) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would set schedule for $deviceId to $startHHmm-$endHHmm');
+      return;
+    }
+    await _firestore.updateLightSchedule(deviceId, startHHmm, endHHmm, enabled: enabled);
+  }
+
+  Future<void> setScheduleEnabled(String deviceId, bool enabled) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would set schedule enabled=$enabled for $deviceId');
+      return;
+    }
+    await _firestore.setScheduleEnabled(deviceId, enabled);
+  }
+
+  Future<void> clearLightSchedule(String deviceId) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would clear schedule for $deviceId');
+      return;
+    }
+    await _firestore.clearLightSchedule(deviceId);
+  }
+
+  Future<void> renameDevice(String deviceId, String name) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would rename $deviceId to $name');
+      return;
+    }
+    await _firestore.renameDevice(deviceId, name);
+  }
+
+  // ------------------------------------------------------------------- CRUD
+
+  /// Create a new floor. Returns the new floor's id, or a placeholder id in
+  /// demo mode (nothing is actually persisted without Firebase).
+  Future<String> createFloor({required String name, required int order}) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would create floor "$name"');
+      return 'demo-floor-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return _firestore.createFloor(name: name, order: order);
+  }
+
+  Future<void> deleteFloor(String floorId) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would delete floor $floorId');
+      return;
+    }
+    await _firestore.deleteFloor(floorId);
+  }
+
+  Future<String> createRoom({
+    required String floorId,
+    required String name,
+    required int gridRow,
+    required int gridCol,
+  }) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would create room "$name" on floor $floorId');
+      return 'demo-room-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return _firestore.createRoom(
+      floorId: floorId,
+      name: name,
+      gridRow: gridRow,
+      gridCol: gridCol,
+    );
+  }
+
+  Future<void> deleteRoom(String roomId) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would delete room $roomId');
+      return;
+    }
+    await _firestore.deleteRoom(roomId);
+  }
+
+  Future<String> createDevice({
+    required String name,
+    required String roomId,
+    required String floorId,
+    required DeviceType type,
+    List<SwitchChild> childSwitches = const [],
+    int? maxOnDurationMinutes,
+  }) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would create device "$name" in room $roomId');
+      return 'demo-device-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return _firestore.createDevice(
+      name: name,
+      roomId: roomId,
+      floorId: floorId,
+      type: type,
+      childSwitches: childSwitches,
+      maxOnDurationMinutes: maxOnDurationMinutes,
+    );
+  }
+
+  Future<void> deleteDevice(String deviceId) async {
+    if (!_firebaseAvailable) {
+      debugPrint('Demo mode: would delete device $deviceId');
+      return;
+    }
+    await _firestore.deleteDevice(deviceId);
+  }
+
   // ------------------------------------------------------------------- seed
 
   /// Write the demo house, but only if the database is empty.
@@ -154,19 +292,17 @@ class CloudSyncService {
       return;
     }
 
+    final floors = const SmartHomeService().getFloors();
     final rooms = const SmartHomeService().getRooms();
     final devices = const SmartHomeService().getDevices();
     final batch = db.batch();
 
-    // Floors are derived from the rooms, so the floor list can never be missing
-    // an entry that a room points at.
-    final floorIds = rooms.map((r) => r.floorId).toSet().toList();
-    for (var i = 0; i < floorIds.length; i++) {
-      batch.set(db.collection(FirestorePaths.floors).doc(floorIds[i]), {
-        Fields.id: floorIds[i],
-        Fields.name: 'Floor ${i + 1}',
-        'order': i,
-        'floorPlanImageUrl': null,
+    for (final floor in floors) {
+      batch.set(db.collection(FirestorePaths.floors).doc(floor.id), {
+        Fields.id: floor.id,
+        Fields.name: floor.name,
+        'order': floor.order,
+        'floorPlanImageUrl': floor.floorPlanImageAsset,
       });
     }
 
@@ -203,7 +339,7 @@ class CloudSyncService {
 
     await batch.commit();
     debugPrint(
-      'Seeded ${floorIds.length} floors, ${rooms.length} rooms, '
+      'Seeded ${floors.length} floors, ${rooms.length} rooms, '
       '${devices.length} devices',
     );
   }

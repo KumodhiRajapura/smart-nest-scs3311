@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:smart_nest_app/config/app_config.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
-import 'package:smart_nest_app/screens/home_screen.dart';
+import 'package:smart_nest_app/screens/main_shell.dart';
 import 'package:smart_nest_app/main.dart';
-import 'package:smart_nest_app/services/auth_service.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -32,7 +31,7 @@ class _SignInScreenState extends State<SignInScreen> {
     // Local demo fallback: navigate to Home when Firebase not configured
     if (!cloud.isFirebaseAvailable && AppConfig.enableLocalDemoFallback) {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainShell()));
       return;
     }
 
@@ -54,7 +53,7 @@ class _SignInScreenState extends State<SignInScreen> {
       final auth = ServicesProvider.of(context).authService;
       if (!cloud.isFirebaseAvailable && AppConfig.enableLocalDemoFallback) {
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainShell()));
         return;
       }
 
@@ -124,7 +123,7 @@ class _SignInScreenState extends State<SignInScreen> {
                            final auth = ServicesProvider.of(context).authService;
                            if (!cloud.isFirebaseAvailable && AppConfig.enableLocalDemoFallback) {
                              if (!mounted) return;
-                             Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+                             Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainShell()));
                              return;
                            }
 
@@ -180,7 +179,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     if (!cloud.isFirebaseAvailable && AppConfig.enableLocalDemoFallback) {
                       _showSnackBar('Local demo: sample data is already available');
                       if (!mounted) return;
-                      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+                      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MainShell()));
                       return;
                     }
 

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:smart_nest_app/screens/camera_screen.dart';
+import 'package:smart_nest_app/models/alert.dart';
+import 'package:smart_nest_app/screens/alerts_screen.dart';
 import 'package:smart_nest_app/screens/floor_dashboard_screen.dart';
-import 'package:smart_nest_app/screens/floor_selection_screen.dart';
-import 'package:smart_nest_app/screens/reports_screen.dart';
 import 'package:smart_nest_app/screens/settings_screen.dart';
-import 'package:smart_nest_app/services/smart_home_service.dart';
+import 'package:smart_nest_app/services/alert_service.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
+import 'package:smart_nest_app/services/smart_home_service.dart';
 import 'package:smart_nest_app/widgets/device_action.dart';
 import 'package:smart_nest_app/widgets/metric_card.dart';
 import 'package:smart_nest_app/models/device_model.dart';
+import 'package:smart_nest_app/widgets/status_chip.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -50,10 +51,15 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
-            child: IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
-              onPressed: () {},
-            ),
+            child: cloud.isFirebaseAvailable
+                ? StreamBuilder<List<Alert>>(
+                    stream: AlertService().streamUnacknowledged(),
+                    builder: (context, snapshot) {
+                      final count = (snapshot.data ?? const <Alert>[]).length;
+                      return _AlertBell(count: count);
+                    },
+                  )
+                : const _AlertBell(count: 0),
           ),
         ],
       ),
@@ -62,22 +68,10 @@ class HomeScreen extends StatelessWidget {
         builder: (context, snapshot) {
           final devices = snapshot.data ?? const SmartHomeService().getDevices();
           final activeCount = devices.where((d) => d.status == DeviceStatus.on).length;
-          double estimatePower(SmartDevice d) {
-            switch (d.type) {
-              case DeviceType.outlet:
-                return 0.5; // kW
-              case DeviceType.multiSwitch:
-                return 1.0;
-              case DeviceType.scheduledAppliance:
-                return 0.8;
-              case DeviceType.scheduledLight:
-                return 0.1;
-              case DeviceType.camera:
-                return 0.02;
-            }
-          }
-          final totalPower = devices.where((d) => d.status == DeviceStatus.on).fold(0.0, (t, d) => t + estimatePower(d));
-          final alertCount = devices.where((d) => d.status == DeviceStatus.error).length;
+          final totalPower = devices.where((d) => d.status == DeviceStatus.on).fold(0.0, (t, d) => t + d.powerUsage);
+          final errorCount = devices.where((d) => d.status == DeviceStatus.error).length;
+          final disconnectedCount = devices.where((d) => d.status == DeviceStatus.disconnected).length;
+          final issueCount = errorCount + disconnectedCount;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
@@ -116,7 +110,9 @@ class HomeScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'All systems are running smoothly',
+                            issueCount == 0
+                                ? 'All systems are running smoothly'
+                                : '$issueCount device${issueCount > 1 ? 's' : ''} need attention',
                             style: TextStyle(
                               color: Colors.white.withAlpha((0.8 * 255).round()),
                               fontSize: 14,
@@ -142,31 +138,9 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  const Text(
-                    'Overview',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withAlpha((0.12 * 255).round()),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle, color: Colors.green, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$alertCount alerts',
-                          style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              const Text(
+                'Overview',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 14),
               GridView.count(
@@ -226,30 +200,12 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _QuickAccessTile(
-                title: 'Floor plans',
-                subtitle: 'Browse and manage rooms',
-                icon: Icons.grid_view_rounded,
-                color: const Color(0xFF4F46E5),
+                title: 'Alerts',
+                subtitle: issueCount == 0 ? 'No active issues' : '$issueCount device issue(s)',
+                icon: Icons.notifications_none_rounded,
+                color: const Color(0xFFB45309),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const FloorSelectionScreen()),
-                ),
-              ),
-              _QuickAccessTile(
-                title: 'Security cameras',
-                subtitle: 'Monitor live rooms',
-                icon: Icons.videocam_outlined,
-                color: const Color(0xFF14B8A6),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const CameraScreen()),
-                ),
-              ),
-              _QuickAccessTile(
-                title: 'Reports',
-                subtitle: 'Usage and energy overview',
-                icon: Icons.analytics_outlined,
-                color: const Color(0xFFF59E0B),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                  MaterialPageRoute(builder: (_) => const AlertsScreen()),
                 ),
               ),
               _QuickAccessTile(
@@ -269,6 +225,40 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+class _AlertBell extends StatelessWidget {
+  final int count;
+
+  const _AlertBell({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications_none_rounded),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AlertsScreen()),
+          ),
+        ),
+        if (count > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(999)),
+              child: Text(
+                count > 9 ? '9+' : '$count',
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// One row in the home device list.
 ///
 /// A gang box gets no master switch: its children are independent, and there is
@@ -279,44 +269,17 @@ class _DeviceTile extends StatelessWidget {
 
   const _DeviceTile({required this.device});
 
-  IconData get _icon {
-    switch (device.type) {
-      case DeviceType.outlet:
-        return Icons.power_outlined;
-      case DeviceType.multiSwitch:
-        return Icons.toggle_on_outlined;
-      case DeviceType.scheduledAppliance:
-        return Icons.schedule_rounded;
-      case DeviceType.scheduledLight:
-        return Icons.lightbulb_outline_rounded;
-      case DeviceType.camera:
-        return Icons.videocam_outlined;
-    }
-  }
-
-  Color get _color {
-    switch (device.status) {
-      case DeviceStatus.on:
-        return const Color(0xFF16A34A);
-      case DeviceStatus.error:
-        return const Color(0xFFEF4444);
-      case DeviceStatus.disconnected:
-        return const Color(0xFFF59E0B);
-      case DeviceStatus.off:
-        return const Color(0xFF64748B);
-    }
-  }
-
   String get _subtitle {
     if (device.isMultiSwitch) {
       final on = device.multiSwitchStates.where((s) => s).length;
-      return '${device.type.name} · $on/${device.multiSwitchStates.length} on';
+      return '${deviceTypeLabel(device.type)} · $on/${device.multiSwitchStates.length} on';
     }
-    return '${device.type.name} · ${device.status.name}';
+    return deviceTypeLabel(device.type);
   }
 
   @override
   Widget build(BuildContext context) {
+    final color = statusColor(device.status);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -336,10 +299,10 @@ class _DeviceTile extends StatelessWidget {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: _color.withAlpha((0.12 * 255).round()),
+                    color: color.withAlpha((0.12 * 255).round()),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(_icon, color: _color),
+                  child: Icon(deviceTypeIcon(device.type), color: color),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -369,11 +332,12 @@ class _DeviceTile extends StatelessWidget {
                 else
                   Switch(
                     value: device.isOn,
-                    onChanged: (value) => runDeviceAction(
-                      context,
-                      () => CloudSyncService()
-                          .updateDeviceState(device.id, isOn: value),
-                    ),
+                    onChanged: device.status == DeviceStatus.error || device.status == DeviceStatus.disconnected
+                        ? null
+                        : (value) => runDeviceAction(
+                              context,
+                              () => CloudSyncService().updateDeviceState(device.id, isOn: value),
+                            ),
                   ),
               ],
             ),
@@ -455,4 +419,3 @@ class _QuickAccessTile extends StatelessWidget {
     );
   }
 }
-

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 // Removed provider dependency to avoid missing package import.
 import 'package:smart_nest_app/config/app_config.dart';
 import 'package:smart_nest_app/screens/sign_in_screen.dart';
-import 'package:smart_nest_app/screens/home_screen.dart';
+import 'package:smart_nest_app/screens/main_shell.dart';
 import 'package:smart_nest_app/services/cloud_sync_service.dart';
 import 'package:smart_nest_app/services/auth_service.dart';
 
@@ -17,7 +17,7 @@ class AuthGate extends StatelessWidget {
     final auth = AuthService();
 
     if (!cloud.isFirebaseAvailable && AppConfig.enableLocalDemoFallback) {
-      return const HomeScreen();
+      return const MainShell();
     }
 
     return StreamBuilder(
@@ -32,7 +32,7 @@ class AuthGate extends StatelessWidget {
           return const SignInScreen();
         }
 
-        return const HomeScreen();
+        return const MainShell();
       },
     );
   }
